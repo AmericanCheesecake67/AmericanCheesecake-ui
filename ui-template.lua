@@ -1,4 +1,4 @@
--- ui-template.lua
+-- ui-template.lua (เวอร์ชันอัปเดต รองรับรูปภาพปุ่มกลม และรันผ่าน GitHub ได้)
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
@@ -84,6 +84,7 @@ function UITemplate:CreateWindow(config)
 	config = config or {}
 	local windowTitle = config.Title or "NEON UI"
 	local toggleKey = config.ToggleKey or Enum.KeyCode.Home
+	local buttonImage = config.ButtonImage -- 📌 ใส่ ID รูปภาพตรงนี้ (เช่น "rbxassetid://1234567")
 
 	local player = Players.LocalPlayer
 	local parentGui = (player and player:FindFirstChild("PlayerGui")) or game:GetService("CoreGui")
@@ -183,22 +184,38 @@ function UITemplate:CreateWindow(config)
 		}),
 	})
 
-	-- // Floating "Messenger Chat Head" Toggle Button (50x50px)
+	-- // Floating "Messenger Chat Head" Toggle Button
 	local chatHead = create("TextButton", {
 		Name = "FloatingToggle",
 		Size = UDim2.fromOffset(50, 50),
 		Position = UDim2.new(0, 24, 0.5, -25),
 		BackgroundColor3 = THEME.Bg,
-		Text = "UI",
+		Text = buttonImage and "" or "UI", -- ถ้ามีรูป จะไม่แสดงข้อความ "UI"
 		TextColor3 = THEME.Accent,
 		Font = Enum.Font.GothamBold,
 		TextSize = 15,
 		AutoButtonColor = false,
+		ClipsDescendants = true,
 		Parent = screenGui,
 	}, {
 		create("UICorner", { CornerRadius = UDim.new(1, 0) }),
-		create("UIStroke", { Color = THEME.Accent, Thickness = 2 }),
+		create("UIStroke", { Color = THEME.Accent, Thickness = 2, Name = "Stroke" }),
 	})
+
+	-- หากส่งรูปภาพมา จะแอบสร้าง ImageLabel ทับปุ่มกลมด้านในให้มนตามขอบรูปภาพ
+	local btnImageLabel = nil
+	if buttonImage then
+		btnImageLabel = create("ImageLabel", {
+			Size = UDim2.new(1, -4, 1, -4), -- ขยับหลบเส้นขอบนีออนเล็กน้อย
+			Position = UDim2.fromScale(0.5, 0.5),
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			BackgroundTransparency = 1,
+			Image = buttonImage,
+			Parent = chatHead,
+		}, {
+			create("UICorner", { CornerRadius = UDim.new(1, 0) }),
+		})
+	end
 
 	-- // Toggle Open/Close Logic (Smooth Scale & Fade)
 	local function toggleWindow()
@@ -206,11 +223,29 @@ function UITemplate:CreateWindow(config)
 		if isOpen then
 			mainFrame.Visible = true
 			TweenService:Create(uiScale, TWEEN_SMOOTH, { Scale = 1 }):Play()
-			TweenService:Create(chatHead, TWEEN_FAST, { BackgroundColor3 = THEME.Bg, TextColor3 = THEME.Accent }):Play()
+			
+			-- อนิเมชั่นปุ่มเปิด: คืนค่าขอบสีเขียวนีออน พื้นหลังดำ
+			TweenService:Create(chatHead, TWEEN_FAST, { BackgroundColor3 = THEME.Bg }):Play()
+			TweenService:Create(chatHead.Stroke, TWEEN_FAST, { Color = THEME.Accent }):Play()
+			if btnImageLabel then
+				TweenService:Create(btnImageLabel, TWEEN_FAST, { ImageColor3 = Color3.fromRGB(255, 255, 255) }):Play()
+			else
+				TweenService:Create(chatHead, TWEEN_FAST, { TextColor3 = THEME.Accent }):Play()
+			end
 		else
 			local closeTween = TweenService:Create(uiScale, TWEEN_FAST, { Scale = 0 })
 			closeTween:Play()
-			TweenService:Create(chatHead, TWEEN_FAST, { BackgroundColor3 = THEME.Accent, TextColor3 = THEME.Bg }):Play()
+			
+			-- อนิเมชั่นปุ่มปิด: เปลี่ยนทั้งปุ่มเป็นสีนีออนสว่างนำสายตา
+			TweenService:Create(chatHead, TWEEN_FAST, { BackgroundColor3 = THEME.Accent }):Play()
+			TweenService:Create(chatHead.Stroke, TWEEN_FAST, { Color = THEME.Accent }):Play()
+			if btnImageLabel then
+				-- ถ้าเป็นรูปภาพ ภาพจะย้อมเป็นสีดำกลืนกับปุ่มกลมที่กลายเป็นสีเขียวสว่าง
+				TweenService:Create(btnImageLabel, TWEEN_FAST, { ImageColor3 = THEME.Bg }):Play()
+			else
+				TweenService:Create(chatHead, TWEEN_FAST, { TextColor3 = THEME.Bg }):Play()
+			end
+			
 			closeTween.Completed:Once(function()
 				if not isOpen then
 					mainFrame.Visible = false
