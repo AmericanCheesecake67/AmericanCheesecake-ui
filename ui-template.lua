@@ -1,4 +1,4 @@
--- ui-template.lua (Bug Fixed: Input leak, GameProcessed & Pure Keyboard Toggle)
+-- ui-template.lua (Final Clean Version)
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
@@ -6,11 +6,9 @@ local Players = game:GetService("Players")
 local UITemplate = {}
 UITemplate.__index = UITemplate
 
--- // Theme Palette (Dark Neon Green & Black)
 local THEME = {
 	Bg = Color3.fromRGB(10, 10, 12),
 	Card = Color3.fromRGB(16, 16, 20),
-	CardHover = Color3.fromRGB(22, 22, 28),
 	Border = Color3.fromRGB(30, 30, 35),
 	Divider = Color3.fromRGB(24, 24, 28),
 	Text = Color3.fromRGB(220, 220, 225),
@@ -23,7 +21,6 @@ local THEME = {
 local TWEEN_FAST = TweenInfo.new(0.18, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 local TWEEN_SMOOTH = TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 
--- // Helper: Instance Creator
 local function create(className, props, children)
 	local inst = Instance.new(className)
 	for k, v in pairs(props or {}) do
@@ -35,11 +32,8 @@ local function create(className, props, children)
 	return inst
 end
 
--- // Helper: Format Roblox Image Asset ID
 local function formatImageId(img)
-	if not img or img == "" then
-		return nil
-	end
+	if not img or img == "" then return nil end
 	img = tostring(img)
 	if string.match(img, "^%d+$") then
 		return "rbxassetid://" .. img
@@ -47,8 +41,9 @@ local function formatImageId(img)
 	return img
 end
 
--- // Helper: Smooth Dragging (ลากลื่นไหล ป้องกันปัญหาลากแล้วคลิกซ้อน)
-local function makeDraggable(dragHandle, targetFrame, onClickCallback)
+local lastDragRelease = 0
+
+local function makeDraggable(dragHandle, targetFrame)
 	local dragging = false
 	local dragStart = nil
 	local startPos = nil
@@ -65,10 +60,10 @@ local function makeDraggable(dragHandle, targetFrame, onClickCallback)
 			connection = input.Changed:Connect(function()
 				if input.UserInputState == Enum.UserInputState.End then
 					dragging = false
-					if connection then connection:Disconnect() end
-					if not hasMoved and onClickCallback then
-						onClickCallback()
+					if hasMoved then
+						lastDragRelease = os.clock()
 					end
+					if connection then connection:Disconnect() end
 				end
 			end)
 		end
@@ -90,7 +85,6 @@ local function makeDraggable(dragHandle, targetFrame, onClickCallback)
 	end)
 end
 
--- // Main Window Constructor
 function UITemplate:CreateWindow(config)
 	config = config or {}
 	local windowTitle = config.Title or "NEON UI"
@@ -113,7 +107,6 @@ function UITemplate:CreateWindow(config)
 
 	local isOpen = true
 
-	-- // Main Window Container
 	local mainFrame = create("Frame", {
 		Name = "MainWindow",
 		Size = UDim2.fromOffset(440, 500),
@@ -132,7 +125,6 @@ function UITemplate:CreateWindow(config)
 
 	local uiScale = create("UIScale", { Scale = 1, Parent = mainFrame })
 
-	-- // Top Header Bar
 	local topBar = create("Frame", {
 		Name = "TopBar",
 		Size = UDim2.new(1, 0, 0, 44),
@@ -171,7 +163,6 @@ function UITemplate:CreateWindow(config)
 		}),
 	})
 
-	-- Top-Right Close Button
 	local topCloseBtn = create("ImageButton", {
 		Name = "HeaderToggleBtn",
 		Size = UDim2.fromOffset(26, 26),
@@ -187,8 +178,7 @@ function UITemplate:CreateWindow(config)
 
 	makeDraggable(topBar, mainFrame)
 
-	-- // Bottom Footer Bar
-	local footerBar = create("Frame", {
+	create("Frame", {
 		Name = "FooterBar",
 		Size = UDim2.new(1, 0, 0, 26),
 		Position = UDim2.new(0, 0, 1, -26),
@@ -225,7 +215,6 @@ function UITemplate:CreateWindow(config)
 		}),
 	})
 
-	-- // Scrollable Content Container
 	local scrollFrame = create("ScrollingFrame", {
 		Name = "Content",
 		Size = UDim2.new(1, -16, 1, -78),
@@ -250,11 +239,10 @@ function UITemplate:CreateWindow(config)
 		}),
 	})
 
-	-- // Floating "Chat Head" Button
 	local chatHead = create("TextButton", {
 		Name = "FloatingToggle",
 		Size = UDim2.fromOffset(52, 52),
-		Position = UDim2.new(1, -76, 0, 24), -- ปรับไว้มุมขวาบนเพื่อป้องกันการคลิกทับซ้อนกลางจอ
+		Position = UDim2.new(1, -76, 0, 24), -- ย้ายไปมุมขวาบน
 		BackgroundColor3 = THEME.Bg,
 		Text = buttonImage and "" or "UI",
 		TextColor3 = THEME.Accent,
@@ -283,8 +271,8 @@ function UITemplate:CreateWindow(config)
 		})
 	end
 
-	-- // Open / Close Logic
 	local function toggleWindow()
+		if os.clock() - lastDragRelease < 0.08 then return end
 		isOpen = not isOpen
 		if isOpen then
 			mainFrame.Visible = true
@@ -309,16 +297,14 @@ function UITemplate:CreateWindow(config)
 		end
 	end
 
-	-- บังคับลากเท่านั้น ไม่สับสนระหว่างลากกับคลิกอีกต่อไป
+	-- ลากได้อย่างเดียว ไม่ให้คลิกเพื่อ toggle ผ่าน makeDraggable
 	makeDraggable(chatHead, chatHead)
 	chatHead.MouseButton1Click:Connect(toggleWindow)
 	topCloseBtn.MouseButton1Click:Connect(toggleWindow)
 
-	-- ตรวจจับคีย์บอร์ดโดยเช็ค gameProcessed ป้องกันการกดทะลุจากการพิมพ์หรือลาก Slider
 	UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		if gameProcessed then return end
 		if UserInputService:GetFocusedTextBox() ~= nil then return end
-
 		if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == toggleKey then
 			toggleWindow()
 		end
@@ -326,7 +312,6 @@ function UITemplate:CreateWindow(config)
 
 	local WindowObj = {}
 
-	-- // Section Constructor
 	function WindowObj:CreateSection(title)
 		local totalToggles = 0
 		local activeToggles = 0
@@ -406,13 +391,10 @@ function UITemplate:CreateWindow(config)
 
 		local SectionObj = {}
 
-		-- // Component 1: Toggle Switch
 		function SectionObj:AddToggle(text, default, callback)
 			totalToggles += 1
 			local state = (default == true)
-			if state then
-				activeToggles += 1
-			end
+			if state then activeToggles += 1 end
 			updateCounter()
 
 			local row = addRow(38, false)
@@ -463,23 +445,18 @@ function UITemplate:CreateWindow(config)
 					Position = state and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8),
 				}):Play()
 
-				if callback then
-					task.spawn(callback, state)
-				end
+				if callback then task.spawn(callback, state) end
 			end
 
 			pill.MouseButton1Click:Connect(function()
 				setState(not state)
 			end)
 
-			if callback and state then
-				task.spawn(callback, state)
-			end
+			if callback and state then task.spawn(callback, state) end
 
 			return { Set = setState, Get = function() return state end }
 		end
 
-		-- // Component 2: Slider
 		function SectionObj:AddSlider(text, min, max, default, callback)
 			local value = math.clamp(default or min, min, max)
 			local row = addRow(50, false)
@@ -511,11 +488,14 @@ function UITemplate:CreateWindow(config)
 				create("UIStroke", { Color = THEME.Border, Thickness = 1 }),
 			})
 
-			local track = create("Frame", {
-				Size = UDim2.new(1, -24, 0, 5),
-				Position = UDim2.fromOffset(12, 34),
+			-- ใช้ TextButton เปล่าเพื่อบล็อกไม่ให้ Draggable ของหน้าต่างหลักขยับตามตอนรูดสไลเดอร์
+			local track = create("TextButton", {
+				Size = UDim2.new(1, -24, 0, 8),
+				Position = UDim2.fromOffset(12, 33),
 				BackgroundColor3 = THEME.Inactive,
 				BorderSizePixel = 0,
+				Text = "",
+				AutoButtonColor = false,
 				Parent = row,
 			}, {
 				create("UICorner", { CornerRadius = UDim.new(1, 0) }),
@@ -532,7 +512,7 @@ function UITemplate:CreateWindow(config)
 			})
 
 			create("Frame", {
-				Size = UDim2.fromOffset(13, 13),
+				Size = UDim2.fromOffset(14, 14),
 				Position = UDim2.new(1, 0, 0.5, 0),
 				AnchorPoint = Vector2.new(0.5, 0.5),
 				BackgroundColor3 = THEME.White,
@@ -547,9 +527,7 @@ function UITemplate:CreateWindow(config)
 				local alpha = (value - min) / math.max(max - min, 1)
 				valueBox.Text = tostring(value)
 				TweenService:Create(fill, TWEEN_FAST, { Size = UDim2.new(alpha, 0, 1, 0) }):Play()
-				if callback then
-					task.spawn(callback, value)
-				end
+				if callback then task.spawn(callback, value) end
 			end
 
 			local sliding = false
@@ -579,17 +557,12 @@ function UITemplate:CreateWindow(config)
 
 			valueBox.FocusLost:Connect(function()
 				local num = tonumber(valueBox.Text)
-				if num then
-					setValue(num)
-				else
-					valueBox.Text = tostring(value)
-				end
+				if num then setValue(num) else valueBox.Text = tostring(value) end
 			end)
 
 			return { Set = setValue, Get = function() return value end }
 		end
 
-		-- // Component 3: Dropdown Selector
 		function SectionObj:AddDropdown(text, options, default, callback)
 			options = options or {}
 			local selected = default or options[1] or "None"
@@ -641,17 +614,13 @@ function UITemplate:CreateWindow(config)
 				isExpanded = false
 				dropBtn.Text = "  " .. tostring(selected) .. "  ▼"
 				TweenService:Create(row, TWEEN_FAST, { Size = UDim2.new(1, 0, 0, 40) }):Play()
-				if callback then
-					task.spawn(callback, selected)
-				end
+				if callback then task.spawn(callback, selected) end
 			end
 
 			local function rebuildOptions(newOptions)
 				options = newOptions or {}
 				for _, child in ipairs(listFrame:GetChildren()) do
-					if child:IsA("TextButton") then
-						child:Destroy()
-					end
+					if child:IsA("TextButton") then child:Destroy() end
 				end
 				listFrame.Size = UDim2.new(1, -24, 0, #options * 28)
 
@@ -659,7 +628,6 @@ function UITemplate:CreateWindow(config)
 					local optBtn = create("TextButton", {
 						Size = UDim2.new(1, 0, 0, 28),
 						BackgroundColor3 = THEME.Bg,
-						BackgroundTransparency = 0,
 						Text = tostring(opt),
 						TextColor3 = (opt == selected) and THEME.Accent or THEME.Text,
 						Font = Enum.Font.GothamMedium,
@@ -670,9 +638,7 @@ function UITemplate:CreateWindow(config)
 
 					optBtn.MouseButton1Click:Connect(function()
 						for _, sibling in ipairs(listFrame:GetChildren()) do
-							if sibling:IsA("TextButton") then
-								sibling.TextColor3 = THEME.Text
-							end
+							if sibling:IsA("TextButton") then sibling.TextColor3 = THEME.Text end
 						end
 						optBtn.TextColor3 = THEME.Accent
 						selectOption(opt)
@@ -689,14 +655,9 @@ function UITemplate:CreateWindow(config)
 				TweenService:Create(row, TWEEN_FAST, { Size = UDim2.new(1, 0, 0, targetHeight) }):Play()
 			end)
 
-			return {
-				Set = selectOption,
-				Refresh = rebuildOptions,
-				Get = function() return selected end,
-			}
+			return { Set = selectOption, Refresh = rebuildOptions, Get = function() return selected end }
 		end
 
-		-- // Component 4: Color Picker Box
 		function SectionObj:AddColorBox(text, defaultColor, callback)
 			local presets = {
 				defaultColor or THEME.Accent,
@@ -709,7 +670,6 @@ function UITemplate:CreateWindow(config)
 			}
 			local index = 1
 			local currentColor = presets[1]
-
 			local row = addRow(38, false)
 
 			create("TextLabel", {
@@ -740,9 +700,7 @@ function UITemplate:CreateWindow(config)
 				index = (index % #presets) + 1
 				currentColor = presets[index]
 				TweenService:Create(swatch, TWEEN_FAST, { BackgroundColor3 = currentColor }):Play()
-				if callback then
-					task.spawn(callback, currentColor)
-				end
+				if callback then task.spawn(callback, currentColor) end
 			end)
 
 			return {
