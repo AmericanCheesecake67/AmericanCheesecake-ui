@@ -1,4 +1,4 @@
--- ui-template.lua (เวอร์ชันอัปเดต รองรับรูปภาพปุ่มกลม และรันผ่าน GitHub ได้)
+-- ui-template.lua (Updated with Dropdown, Credits, Active/Draggable & ButtonImage)
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
@@ -6,10 +6,11 @@ local Players = game:GetService("Players")
 local UITemplate = {}
 UITemplate.__index = UITemplate
 
--- // Theme Palette (Dark Neon Aesthetic)
+-- // Theme Palette (Dark Neon Green & Black)
 local THEME = {
 	Bg = Color3.fromRGB(10, 10, 12),
 	Card = Color3.fromRGB(16, 16, 20),
+	CardHover = Color3.fromRGB(22, 22, 28),
 	Border = Color3.fromRGB(30, 30, 35),
 	Divider = Color3.fromRGB(24, 24, 28),
 	Text = Color3.fromRGB(220, 220, 225),
@@ -32,6 +33,18 @@ local function create(className, props, children)
 		child.Parent = inst
 	end
 	return inst
+end
+
+-- // Helper: Format Roblox Image Asset ID
+local function formatImageId(img)
+	if not img or img == "" then
+		return nil
+	end
+	img = tostring(img)
+	if string.match(img, "^%d+$") then
+		return "rbxassetid://" .. img
+	end
+	return img
 end
 
 -- // Helper: Smooth Dragging (PC & Mobile with Click-vs-Drag Threshold)
@@ -84,12 +97,11 @@ function UITemplate:CreateWindow(config)
 	config = config or {}
 	local windowTitle = config.Title or "NEON UI"
 	local toggleKey = config.ToggleKey or Enum.KeyCode.Home
-	local buttonImage = config.ButtonImage -- 📌 ใส่ ID รูปภาพตรงนี้ (เช่น "rbxassetid://1234567")
+	local buttonImage = formatImageId(config.ButtonImage or "13532899989")
 
 	local player = Players.LocalPlayer
 	local parentGui = (player and player:FindFirstChild("PlayerGui")) or game:GetService("CoreGui")
 
-	-- Clean up old instance if re-executed
 	if parentGui:FindFirstChild("DarkNeonUI") then
 		parentGui.DarkNeonUI:Destroy()
 	end
@@ -103,14 +115,16 @@ function UITemplate:CreateWindow(config)
 
 	local isOpen = true
 
-	-- // Main Window Container
+	-- // 1. Main Window Container (Active = true, Draggable = true)
 	local mainFrame = create("Frame", {
 		Name = "MainWindow",
-		Size = UDim2.fromOffset(420, 480),
+		Size = UDim2.fromOffset(440, 500),
 		Position = UDim2.fromScale(0.5, 0.5),
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		BackgroundColor3 = THEME.Bg,
 		BorderSizePixel = 0,
+		Active = true,
+		Draggable = true,
 		ClipsDescendants = true,
 		Parent = screenGui,
 	}, {
@@ -123,46 +137,101 @@ function UITemplate:CreateWindow(config)
 	-- // Top Header Bar
 	local topBar = create("Frame", {
 		Name = "TopBar",
-		Size = UDim2.new(1, 0, 0, 42),
+		Size = UDim2.new(1, 0, 0, 44),
 		BackgroundColor3 = THEME.Card,
 		BorderSizePixel = 0,
 		Parent = mainFrame,
 	}, {
 		create("UICorner", { CornerRadius = UDim.new(0, 10) }),
-		create("Frame", { -- Bottom border line
+		create("Frame", {
 			Size = UDim2.new(1, 0, 0, 1),
 			Position = UDim2.new(0, 0, 1, -1),
 			BackgroundColor3 = THEME.Border,
 			BorderSizePixel = 0,
 		}),
 		create("TextLabel", {
-			Size = UDim2.new(1, -90, 1, 0),
-			Position = UDim2.fromOffset(16, 0),
+			Name = "WindowTitle",
+			Size = UDim2.new(0.5, 0, 1, 0),
+			Position = UDim2.fromOffset(14, 0),
 			BackgroundTransparency = 1,
 			Text = windowTitle,
 			TextColor3 = THEME.Accent,
 			Font = Enum.Font.GothamBold,
-			TextSize = 15,
+			TextSize = 14,
 			TextXAlignment = Enum.TextXAlignment.Left,
 		}),
+		-- // 2. Top-Right Credit Label ("AmericanCheesecake67")
 		create("TextLabel", {
-			Size = UDim2.fromOffset(70, 20),
-			Position = UDim2.new(1, -82, 0.5, -10),
+			Name = "AuthorCreditTop",
+			Size = UDim2.fromOffset(160, 20),
+			Position = UDim2.new(1, -204, 0.5, -10),
 			BackgroundTransparency = 1,
-			Text = "[" .. toggleKey.Name .. "]",
-			TextColor3 = THEME.SubText,
-			Font = Enum.Font.GothamMedium,
+			Text = "AmericanCheesecake67",
+			TextColor3 = THEME.Accent,
+			Font = Enum.Font.GothamBold,
 			TextSize = 12,
 			TextXAlignment = Enum.TextXAlignment.Right,
 		}),
 	})
 
+	-- Top-Right Image Close/Minimize Button
+	local topCloseBtn = create("ImageButton", {
+		Name = "HeaderToggleBtn",
+		Size = UDim2.fromOffset(26, 26),
+		Position = UDim2.new(1, -36, 0.5, -13),
+		BackgroundColor3 = THEME.Bg,
+		Image = buttonImage or "",
+		AutoButtonColor = false,
+		Parent = topBar,
+	}, {
+		create("UICorner", { CornerRadius = UDim.new(1, 0) }),
+		create("UIStroke", { Color = THEME.Accent, Thickness = 1 }),
+	})
+
 	makeDraggable(topBar, mainFrame)
+
+	-- // Bottom Footer Bar (Displays "AmericanCheesecake67" & Keybind Hint)
+	local footerBar = create("Frame", {
+		Name = "FooterBar",
+		Size = UDim2.new(1, 0, 0, 26),
+		Position = UDim2.new(0, 0, 1, -26),
+		BackgroundColor3 = THEME.Card,
+		BorderSizePixel = 0,
+		Parent = mainFrame,
+	}, {
+		create("Frame", {
+			Size = UDim2.new(1, 0, 0, 1),
+			Position = UDim2.fromOffset(0, 0),
+			BackgroundColor3 = THEME.Border,
+			BorderSizePixel = 0,
+		}),
+		create("TextLabel", {
+			Size = UDim2.new(0.5, -12, 1, 0),
+			Position = UDim2.fromOffset(12, 0),
+			BackgroundTransparency = 1,
+			Text = "Toggle UI: [" .. toggleKey.Name .. "]",
+			TextColor3 = THEME.SubText,
+			Font = Enum.Font.Code,
+			TextSize = 12,
+			TextXAlignment = Enum.TextXAlignment.Left,
+		}),
+		create("TextLabel", {
+			Name = "AuthorCreditBottom",
+			Size = UDim2.new(0.5, -12, 1, 0),
+			Position = UDim2.new(0.5, 0, 0, 0),
+			BackgroundTransparency = 1,
+			Text = "AmericanCheesecake67",
+			TextColor3 = THEME.Accent,
+			Font = Enum.Font.Code,
+			TextSize = 12,
+			TextXAlignment = Enum.TextXAlignment.Right,
+		}),
+	})
 
 	-- // Scrollable Content Container
 	local scrollFrame = create("ScrollingFrame", {
 		Name = "Content",
-		Size = UDim2.new(1, -16, 1, -54),
+		Size = UDim2.new(1, -16, 1, -78),
 		Position = UDim2.fromOffset(8, 48),
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
@@ -184,13 +253,13 @@ function UITemplate:CreateWindow(config)
 		}),
 	})
 
-	-- // Floating "Messenger Chat Head" Toggle Button
+	-- // 4. Floating "Messenger Chat Head" Toggle Button (Uses ButtonImage)
 	local chatHead = create("TextButton", {
 		Name = "FloatingToggle",
-		Size = UDim2.fromOffset(50, 50),
-		Position = UDim2.new(0, 24, 0.5, -25),
+		Size = UDim2.fromOffset(52, 52),
+		Position = UDim2.new(0, 24, 0.5, -26),
 		BackgroundColor3 = THEME.Bg,
-		Text = buttonImage and "" or "UI", -- ถ้ามีรูป จะไม่แสดงข้อความ "UI"
+		Text = buttonImage and "" or "UI",
 		TextColor3 = THEME.Accent,
 		Font = Enum.Font.GothamBold,
 		TextSize = 15,
@@ -202,11 +271,11 @@ function UITemplate:CreateWindow(config)
 		create("UIStroke", { Color = THEME.Accent, Thickness = 2, Name = "Stroke" }),
 	})
 
-	-- หากส่งรูปภาพมา จะแอบสร้าง ImageLabel ทับปุ่มกลมด้านในให้มนตามขอบรูปภาพ
 	local btnImageLabel = nil
 	if buttonImage then
 		btnImageLabel = create("ImageLabel", {
-			Size = UDim2.new(1, -4, 1, -4), -- ขยับหลบเส้นขอบนีออนเล็กน้อย
+			Name = "Icon",
+			Size = UDim2.new(1, -4, 1, -4),
 			Position = UDim2.fromScale(0.5, 0.5),
 			AnchorPoint = Vector2.new(0.5, 0.5),
 			BackgroundTransparency = 1,
@@ -217,35 +286,24 @@ function UITemplate:CreateWindow(config)
 		})
 	end
 
-	-- // Toggle Open/Close Logic (Smooth Scale & Fade)
+	-- // Toggle Open/Close Logic
 	local function toggleWindow()
 		isOpen = not isOpen
 		if isOpen then
 			mainFrame.Visible = true
 			TweenService:Create(uiScale, TWEEN_SMOOTH, { Scale = 1 }):Play()
-			
-			-- อนิเมชั่นปุ่มเปิด: คืนค่าขอบสีเขียวนีออน พื้นหลังดำ
 			TweenService:Create(chatHead, TWEEN_FAST, { BackgroundColor3 = THEME.Bg }):Play()
 			TweenService:Create(chatHead.Stroke, TWEEN_FAST, { Color = THEME.Accent }):Play()
 			if btnImageLabel then
-				TweenService:Create(btnImageLabel, TWEEN_FAST, { ImageColor3 = Color3.fromRGB(255, 255, 255) }):Play()
+				TweenService:Create(btnImageLabel, TWEEN_FAST, { ImageTransparency = 0 }):Play()
 			else
 				TweenService:Create(chatHead, TWEEN_FAST, { TextColor3 = THEME.Accent }):Play()
 			end
 		else
 			local closeTween = TweenService:Create(uiScale, TWEEN_FAST, { Scale = 0 })
 			closeTween:Play()
-			
-			-- อนิเมชั่นปุ่มปิด: เปลี่ยนทั้งปุ่มเป็นสีนีออนสว่างนำสายตา
-			TweenService:Create(chatHead, TWEEN_FAST, { BackgroundColor3 = THEME.Accent }):Play()
+			TweenService:Create(chatHead, TWEEN_FAST, { BackgroundColor3 = THEME.Card }):Play()
 			TweenService:Create(chatHead.Stroke, TWEEN_FAST, { Color = THEME.Accent }):Play()
-			if btnImageLabel then
-				-- ถ้าเป็นรูปภาพ ภาพจะย้อมเป็นสีดำกลืนกับปุ่มกลมที่กลายเป็นสีเขียวสว่าง
-				TweenService:Create(btnImageLabel, TWEEN_FAST, { ImageColor3 = THEME.Bg }):Play()
-			else
-				TweenService:Create(chatHead, TWEEN_FAST, { TextColor3 = THEME.Bg }):Play()
-			end
-			
 			closeTween.Completed:Once(function()
 				if not isOpen then
 					mainFrame.Visible = false
@@ -255,8 +313,8 @@ function UITemplate:CreateWindow(config)
 	end
 
 	makeDraggable(chatHead, chatHead, toggleWindow)
+	topCloseBtn.MouseButton1Click:Connect(toggleWindow)
 
-	-- Bind Keyboard Toggle (Default: Home key, ignores typing in TextBoxes)
 	UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		if not gameProcessed and UserInputService:GetFocusedTextBox() == nil then
 			if input.KeyCode == toggleKey then
@@ -288,7 +346,6 @@ function UITemplate:CreateWindow(config)
 			}),
 		})
 
-		-- Section Header
 		local header = create("Frame", {
 			Name = "Header",
 			Size = UDim2.new(1, 0, 0, 34),
@@ -313,7 +370,7 @@ function UITemplate:CreateWindow(config)
 			Position = UDim2.new(0.65, 0, 0, 0),
 			BackgroundTransparency = 1,
 			Text = "0 / 0 on",
-			TextColor3 = THEME.Accent,
+			TextColor3 = THEME.SubText,
 			Font = Enum.Font.GothamMedium,
 			TextSize = 11,
 			TextXAlignment = Enum.TextXAlignment.Right,
@@ -326,15 +383,17 @@ function UITemplate:CreateWindow(config)
 		end
 
 		local itemOrder = 1
-		local function addRow(height)
+		local function addRow(height, autoHeight)
 			itemOrder += 1
 			local row = create("Frame", {
 				Size = UDim2.new(1, 0, 0, height),
+				AutomaticSize = autoHeight and Enum.AutomaticSize.Y or Enum.AutomaticSize.None,
 				BackgroundTransparency = 1,
+				ClipsDescendants = true,
 				LayoutOrder = itemOrder,
 				Parent = sectionCard,
 			}, {
-				create("Frame", { -- Subtle Top Divider
+				create("Frame", {
 					Size = UDim2.new(1, -24, 0, 1),
 					Position = UDim2.fromOffset(12, 0),
 					BackgroundColor3 = THEME.Divider,
@@ -346,7 +405,7 @@ function UITemplate:CreateWindow(config)
 
 		local SectionObj = {}
 
-		-- // 1. Toggle Switch (42x22 px Pill)
+		-- // Component 1: Toggle Switch
 		function SectionObj:AddToggle(text, default, callback)
 			totalToggles += 1
 			local state = (default == true)
@@ -355,7 +414,7 @@ function UITemplate:CreateWindow(config)
 			end
 			updateCounter()
 
-			local row = addRow(38)
+			local row = addRow(38, false)
 
 			create("TextLabel", {
 				Size = UDim2.new(1, -70, 1, 0),
@@ -419,10 +478,10 @@ function UITemplate:CreateWindow(config)
 			return { Set = setState, Get = function() return state end }
 		end
 
-		-- // 2. Slider (With Direct Numeric TextBox & Progress Bar)
+		-- // Component 2: Slider (Drag & Direct Number Box)
 		function SectionObj:AddSlider(text, min, max, default, callback)
 			local value = math.clamp(default or min, min, max)
-			local row = addRow(50)
+			local row = addRow(50, false)
 
 			create("TextLabel", {
 				Size = UDim2.new(1, -80, 0, 22),
@@ -471,7 +530,7 @@ function UITemplate:CreateWindow(config)
 				create("UICorner", { CornerRadius = UDim.new(1, 0) }),
 			})
 
-			local thumb = create("Frame", {
+			create("Frame", {
 				Size = UDim2.fromOffset(13, 13),
 				Position = UDim2.new(1, 0, 0.5, 0),
 				AnchorPoint = Vector2.new(0.5, 0.5),
@@ -529,21 +588,128 @@ function UITemplate:CreateWindow(config)
 			return { Set = setValue, Get = function() return value end }
 		end
 
-		-- // 3. Color Picker Box (Preset Neon Swatch Selector)
+		-- // Component 3: Dropdown Selector (Expandable Option List)
+		function SectionObj:AddDropdown(text, options, default, callback)
+			options = options or {}
+			local selected = default or options[1] or "None"
+			local isExpanded = false
+
+			local row = addRow(40, false)
+
+			create("TextLabel", {
+				Size = UDim2.new(0.48, 0, 0, 40),
+				Position = UDim2.fromOffset(12, 0),
+				BackgroundTransparency = 1,
+				Text = text,
+				TextColor3 = THEME.Text,
+				Font = Enum.Font.Gotham,
+				TextSize = 13,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				Parent = row,
+			})
+
+			local dropBtn = create("TextButton", {
+				Size = UDim2.new(0.48, -12, 0, 26),
+				Position = UDim2.new(0.52, 0, 0, 7),
+				BackgroundColor3 = THEME.Bg,
+				Text = "  " .. tostring(selected) .. "  ▼",
+				TextColor3 = THEME.Accent,
+				Font = Enum.Font.GothamBold,
+				TextSize = 12,
+				AutoButtonColor = false,
+				Parent = row,
+			}, {
+				create("UICorner", { CornerRadius = UDim.new(0, 6) }),
+				create("UIStroke", { Color = THEME.Border, Thickness = 1 }),
+			})
+
+			local listFrame = create("Frame", {
+				Size = UDim2.new(1, -24, 0, #options * 28),
+				Position = UDim2.fromOffset(12, 42),
+				BackgroundColor3 = THEME.Bg,
+				BorderSizePixel = 0,
+				Parent = row,
+			}, {
+				create("UICorner", { CornerRadius = UDim.new(0, 6) }),
+				create("UIStroke", { Color = THEME.Border, Thickness = 1 }),
+				create("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder }),
+			})
+
+			local function selectOption(opt)
+				selected = opt
+				isExpanded = false
+				dropBtn.Text = "  " .. tostring(selected) .. "  ▼"
+				TweenService:Create(row, TWEEN_FAST, { Size = UDim2.new(1, 0, 0, 40) }):Play()
+				if callback then
+					task.spawn(callback, selected)
+				end
+			end
+
+			local function rebuildOptions(newOptions)
+				options = newOptions or {}
+				for _, child in ipairs(listFrame:GetChildren()) do
+					if child:IsA("TextButton") then
+						child:Destroy()
+					end
+				end
+				listFrame.Size = UDim2.new(1, -24, 0, #options * 28)
+
+				for i, opt in ipairs(options) do
+					local optBtn = create("TextButton", {
+						Size = UDim2.new(1, 0, 0, 28),
+						BackgroundColor3 = THEME.Bg,
+						BackgroundTransparency = 0,
+						Text = tostring(opt),
+						TextColor3 = (opt == selected) and THEME.Accent or THEME.Text,
+						Font = Enum.Font.GothamMedium,
+						TextSize = 12,
+						LayoutOrder = i,
+						Parent = listFrame,
+					})
+
+					optBtn.MouseButton1Click:Connect(function()
+						for _, sibling in ipairs(listFrame:GetChildren()) do
+							if sibling:IsA("TextButton") then
+								sibling.TextColor3 = THEME.Text
+							end
+						end
+						optBtn.TextColor3 = THEME.Accent
+						selectOption(opt)
+					end)
+				end
+			end
+
+			rebuildOptions(options)
+
+			dropBtn.MouseButton1Click:Connect(function()
+				isExpanded = not isExpanded
+				dropBtn.Text = "  " .. tostring(selected) .. (isExpanded and "  ▲" or "  ▼")
+				local targetHeight = isExpanded and (48 + (#options * 28)) or 40
+				TweenService:Create(row, TWEEN_FAST, { Size = UDim2.new(1, 0, 0, targetHeight) }):Play()
+			end)
+
+			return {
+				Set = selectOption,
+				Refresh = rebuildOptions,
+				Get = function() return selected end,
+			}
+		end
+
+		-- // Component 4: Color Picker Box
 		function SectionObj:AddColorBox(text, defaultColor, callback)
 			local presets = {
 				defaultColor or THEME.Accent,
-				Color3.fromRGB(0, 230, 90),   -- Neon Green
-				Color3.fromRGB(255, 55, 95),  -- Neon Crimson
-				Color3.fromRGB(0, 195, 255),  -- Cyber Cyan
-				Color3.fromRGB(255, 200, 0),  -- Neon Gold
-				Color3.fromRGB(185, 80, 255), -- Electric Purple
-				Color3.fromRGB(255, 255, 255) -- Pure White
+				Color3.fromRGB(0, 230, 90),
+				Color3.fromRGB(255, 55, 95),
+				Color3.fromRGB(0, 195, 255),
+				Color3.fromRGB(255, 200, 0),
+				Color3.fromRGB(185, 80, 255),
+				Color3.fromRGB(255, 255, 255),
 			}
 			local index = 1
 			local currentColor = presets[1]
 
-			local row = addRow(38)
+			local row = addRow(38, false)
 
 			create("TextLabel", {
 				Size = UDim2.new(1, -60, 1, 0),
