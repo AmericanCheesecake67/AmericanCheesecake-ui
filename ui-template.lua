@@ -47,7 +47,7 @@ local function formatImageId(img)
 	return img
 end
 
--- // Helper: Smooth Dragging (แยก Drag ออกจาก Click อย่างชัดเจน)
+-- // Helper: Smooth Dragging (ลากลื่นไหล ป้องกันปัญหาลากแล้วคลิกซ้อน)
 local function makeDraggable(dragHandle, targetFrame, onClickCallback)
 	local dragging = false
 	local dragStart = nil
@@ -65,7 +65,7 @@ local function makeDraggable(dragHandle, targetFrame, onClickCallback)
 			connection = input.Changed:Connect(function()
 				if input.UserInputState == Enum.UserInputState.End then
 					dragging = false
-					connection:Disconnect()
+					if connection then connection:Disconnect() end
 					if not hasMoved and onClickCallback then
 						onClickCallback()
 					end
@@ -113,7 +113,7 @@ function UITemplate:CreateWindow(config)
 
 	local isOpen = true
 
-	-- // 1. Main Window Container
+	-- // Main Window Container
 	local mainFrame = create("Frame", {
 		Name = "MainWindow",
 		Size = UDim2.fromOffset(440, 500),
@@ -171,7 +171,7 @@ function UITemplate:CreateWindow(config)
 		}),
 	})
 
-	-- Top-Right Close/Minimize Button
+	-- Top-Right Close Button
 	local topCloseBtn = create("ImageButton", {
 		Name = "HeaderToggleBtn",
 		Size = UDim2.fromOffset(26, 26),
@@ -250,11 +250,11 @@ function UITemplate:CreateWindow(config)
 		}),
 	})
 
-	-- // Floating "Chat Head" Toggle Button
+	-- // Floating "Chat Head" Button
 	local chatHead = create("TextButton", {
 		Name = "FloatingToggle",
 		Size = UDim2.fromOffset(52, 52),
-		Position = UDim2.new(0, 24, 0.5, -26),
+		Position = UDim2.new(1, -76, 0, 24), -- ปรับไว้มุมขวาบนเพื่อป้องกันการคลิกทับซ้อนกลางจอ
 		BackgroundColor3 = THEME.Bg,
 		Text = buttonImage and "" or "UI",
 		TextColor3 = THEME.Accent,
@@ -309,10 +309,12 @@ function UITemplate:CreateWindow(config)
 		end
 	end
 
-	makeDraggable(chatHead, chatHead, toggleWindow)
+	-- บังคับลากเท่านั้น ไม่สับสนระหว่างลากกับคลิกอีกต่อไป
+	makeDraggable(chatHead, chatHead)
+	chatHead.MouseButton1Click:Connect(toggleWindow)
 	topCloseBtn.MouseButton1Click:Connect(toggleWindow)
 
-	-- 📌 แก้ไขจุดสำคัญ: เช็ค gameProcessed และรับเฉพาะคีย์บอร์ดเพื่อป้องกันคลิกทะลุหรือลาก Slider แล้วหน้าต่างเด้ง
+	-- ตรวจจับคีย์บอร์ดโดยเช็ค gameProcessed ป้องกันการกดทะลุจากการพิมพ์หรือลาก Slider
 	UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		if gameProcessed then return end
 		if UserInputService:GetFocusedTextBox() ~= nil then return end
