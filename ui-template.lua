@@ -1,4 +1,4 @@
--- ui-template.lua (Updated with Dropdown, Credits, Active/Draggable & ButtonImage)
+-- ui-template.lua (Bug Fixed: Input leak, GameProcessed & Pure Keyboard Toggle)
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
@@ -47,22 +47,26 @@ local function formatImageId(img)
 	return img
 end
 
--- // Helper: Smooth Dragging (PC & Mobile with Click-vs-Drag Threshold)
+-- // Helper: Smooth Dragging (แยก Drag ออกจาก Click อย่างชัดเจน)
 local function makeDraggable(dragHandle, targetFrame, onClickCallback)
-	local dragging, dragInput, dragStart, startPos = false, nil, nil, nil
-	local moved = false
+	local dragging = false
+	local dragStart = nil
+	local startPos = nil
+	local hasMoved = false
 
 	dragHandle.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 			dragging = true
-			moved = false
+			hasMoved = false
 			dragStart = input.Position
 			startPos = targetFrame.Position
 
-			input.Changed:Connect(function()
+			local connection
+			connection = input.Changed:Connect(function()
 				if input.UserInputState == Enum.UserInputState.End then
 					dragging = false
-					if not moved and onClickCallback then
+					connection:Disconnect()
+					if not hasMoved and onClickCallback then
 						onClickCallback()
 					end
 				end
@@ -70,17 +74,11 @@ local function makeDraggable(dragHandle, targetFrame, onClickCallback)
 		end
 	end)
 
-	dragHandle.InputChanged:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-			dragInput = input
-		end
-	end)
-
 	UserInputService.InputChanged:Connect(function(input)
-		if input == dragInput and dragging then
+		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
 			local delta = input.Position - dragStart
-			if delta.Magnitude > 5 then
-				moved = true
+			if delta.Magnitude > 6 then
+				hasMoved = true
 			end
 			targetFrame.Position = UDim2.new(
 				startPos.X.Scale,
@@ -115,7 +113,7 @@ function UITemplate:CreateWindow(config)
 
 	local isOpen = true
 
-	-- // 1. Main Window Container (Active = true, Draggable = true)
+	-- // 1. Main Window Container
 	local mainFrame = create("Frame", {
 		Name = "MainWindow",
 		Size = UDim2.fromOffset(440, 500),
@@ -160,7 +158,6 @@ function UITemplate:CreateWindow(config)
 			TextSize = 14,
 			TextXAlignment = Enum.TextXAlignment.Left,
 		}),
-		-- // 2. Top-Right Credit Label ("AmericanCheesecake67")
 		create("TextLabel", {
 			Name = "AuthorCreditTop",
 			Size = UDim2.fromOffset(160, 20),
@@ -174,7 +171,7 @@ function UITemplate:CreateWindow(config)
 		}),
 	})
 
-	-- Top-Right Image Close/Minimize Button
+	-- Top-Right Close/Minimize Button
 	local topCloseBtn = create("ImageButton", {
 		Name = "HeaderToggleBtn",
 		Size = UDim2.fromOffset(26, 26),
@@ -190,7 +187,7 @@ function UITemplate:CreateWindow(config)
 
 	makeDraggable(topBar, mainFrame)
 
-	-- // Bottom Footer Bar (Displays "AmericanCheesecake67" & Keybind Hint)
+	-- // Bottom Footer Bar
 	local footerBar = create("Frame", {
 		Name = "FooterBar",
 		Size = UDim2.new(1, 0, 0, 26),
@@ -209,7 +206,7 @@ function UITemplate:CreateWindow(config)
 			Size = UDim2.new(0.5, -12, 1, 0),
 			Position = UDim2.fromOffset(12, 0),
 			BackgroundTransparency = 1,
-			Text = "Toggle UI: [" .. toggleKey.Name .. "]",
+			Text = "Toggle: [" .. toggleKey.Name .. "]",
 			TextColor3 = THEME.SubText,
 			Font = Enum.Font.Code,
 			TextSize = 12,
@@ -253,7 +250,7 @@ function UITemplate:CreateWindow(config)
 		}),
 	})
 
-	-- // 4. Floating "Messenger Chat Head" Toggle Button (Uses ButtonImage)
+	-- // Floating "Chat Head" Toggle Button
 	local chatHead = create("TextButton", {
 		Name = "FloatingToggle",
 		Size = UDim2.fromOffset(52, 52),
@@ -286,7 +283,7 @@ function UITemplate:CreateWindow(config)
 		})
 	end
 
-	-- // Toggle Open/Close Logic
+	-- // Open / Close Logic
 	local function toggleWindow()
 		isOpen = not isOpen
 		if isOpen then
@@ -315,11 +312,13 @@ function UITemplate:CreateWindow(config)
 	makeDraggable(chatHead, chatHead, toggleWindow)
 	topCloseBtn.MouseButton1Click:Connect(toggleWindow)
 
+	-- 📌 แก้ไขจุดสำคัญ: เช็ค gameProcessed และรับเฉพาะคีย์บอร์ดเพื่อป้องกันคลิกทะลุหรือลาก Slider แล้วหน้าต่างเด้ง
 	UserInputService.InputBegan:Connect(function(input, gameProcessed)
-		if not gameProcessed and UserInputService:GetFocusedTextBox() == nil then
-			if input.KeyCode == toggleKey then
-				toggleWindow()
-			end
+		if gameProcessed then return end
+		if UserInputService:GetFocusedTextBox() ~= nil then return end
+
+		if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == toggleKey then
+			toggleWindow()
 		end
 	end)
 
@@ -478,7 +477,7 @@ function UITemplate:CreateWindow(config)
 			return { Set = setState, Get = function() return state end }
 		end
 
-		-- // Component 2: Slider (Drag & Direct Number Box)
+		-- // Component 2: Slider
 		function SectionObj:AddSlider(text, min, max, default, callback)
 			local value = math.clamp(default or min, min, max)
 			local row = addRow(50, false)
@@ -588,7 +587,7 @@ function UITemplate:CreateWindow(config)
 			return { Set = setValue, Get = function() return value end }
 		end
 
-		-- // Component 3: Dropdown Selector (Expandable Option List)
+		-- // Component 3: Dropdown Selector
 		function SectionObj:AddDropdown(text, options, default, callback)
 			options = options or {}
 			local selected = default or options[1] or "None"
