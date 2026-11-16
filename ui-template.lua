@@ -1,4 +1,4 @@
---[[ Name: AetherUI Version: 1.0.0 Author: AmericanCheesecake67 ]]
+--[[ Name: AetherUI Version: 1.1.0 Author: AmericanCheesecake67 ]]
 
 --// Services
 local Players = game:GetService("Players")
@@ -6,9 +6,16 @@ local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local HttpService = game:GetService("HttpService")
-local GuiService = game:GetService("GuiService")
 
---// Global Theme Configuration (Edit here for instant global restyling)
+--// Custom Asset Constants
+local ASSETS = {
+	ToggleKnob = "rbxassetid://130969271294939",
+	BackgroundImage = "rbxassetid://116274802250748",
+	WindowLogo = "rbxassetid://100316831604862",
+	TitleImage = "rbxassetid://126929770129914",
+}
+
+--// Global Theme Configuration
 local THEME = {
 	Colors = {
 		Background = Color3.fromRGB(13, 15, 22),
@@ -19,15 +26,15 @@ local THEME = {
 		ElementHover = Color3.fromRGB(32, 37, 54),
 		DropdownBg = Color3.fromRGB(17, 20, 30),
 		Border = Color3.fromRGB(42, 48, 70),
-		Accent = Color3.fromRGB(0, 229, 255),
-		AccentSecondary = Color3.fromRGB(138, 75, 255),
+		Accent = Color3.fromRGB(230, 40, 50), -- American Red
+		AccentSecondary = Color3.fromRGB(20, 40, 100), -- Navy Blue
 		Text = Color3.fromRGB(240, 244, 255),
 		SubText = Color3.fromRGB(156, 166, 194),
 		Muted = Color3.fromRGB(98, 108, 138),
 		Success = Color3.fromRGB(46, 213, 115),
 		Warning = Color3.fromRGB(255, 177, 66),
 		Error = Color3.fromRGB(255, 71, 87),
-		Info = Color3.fromRGB(0, 229, 255),
+		Info = Color3.fromRGB(230, 40, 50),
 	},
 	Fonts = {
 		Bold = Enum.Font.GothamBold,
@@ -387,7 +394,8 @@ end
 --// Main Library Table
 local AetherUI = {
 	Theme = THEME,
-	Version = "1.0.0",
+	Assets = ASSETS,
+	Version = "1.1.0",
 }
 AetherUI.__index = AetherUI
 
@@ -407,8 +415,11 @@ function AetherUI:CreateWindow(opts)
 	opts = type(opts) == "table" and opts or { Title = tostring(opts or "AetherUI") }
 
 	local titleText = opts.Title or "AetherUI"
-	local subtitleText = opts.Subtitle or "v1.0.0 • Precision Overlay"
-	local logoAsset = opts.Icon or opts.Logo or "rbxassetid://10723407389"
+	local subtitleText = opts.Subtitle or "v1.1.0 • Precision Overlay"
+	local logoAsset = opts.Icon or opts.Logo or ASSETS.WindowLogo
+	local titleImageAsset = opts.TitleImage or ASSETS.TitleImage
+	local bgImageAsset = (opts.BackgroundImage ~= nil) and opts.BackgroundImage or ASSETS.BackgroundImage
+	local bgDarkening = tonumber(opts.BackgroundDarkening) or 0.6
 	local toggleKey = opts.ToggleKey or Enum.KeyCode.RightShift
 	local windowSize = opts.Size or Vector2.new(640, 440)
 	local minSize = opts.MinSize or Vector2.new(480, 320)
@@ -429,6 +440,25 @@ function AetherUI:CreateWindow(opts)
 	self.ToggleKey = toggleKey
 	self.Visible = true
 	self._connections = {}
+	self._themeUpdaters = {}
+	self._translatableFrames = {}
+	self._currentTransparency = 0
+
+	function self:_RegisterThemeUpdater(fn)
+		table.insert(self._themeUpdaters, fn)
+	end
+
+	function self:_RegisterFrame(frame, baseTransparency)
+		if frame then
+			table.insert(self._translatableFrames, {
+				Instance = frame,
+				Base = baseTransparency or 0,
+			})
+			if self._currentTransparency > 0 then
+				frame.BackgroundTransparency = math.clamp((baseTransparency or 0) + self._currentTransparency, 0, 0.95)
+			end
+		end
+	end
 
 	local screenGui = Utility.Create("ScreenGui", {
 		Name = guiName,
@@ -466,6 +496,10 @@ function AetherUI:CreateWindow(opts)
 		ZIndex = 901,
 		Parent = tooltipFrame,
 	})
+
+	self:_RegisterThemeUpdater(function(accent)
+		tooltipStroke.Color = accent
+	end)
 
 	function self:AttachTooltip(target, text)
 		if not text or text == "" then
@@ -530,7 +564,7 @@ function AetherUI:CreateWindow(opts)
 	})
 	Utility.AddCorner(mainFrame, THEME.CornerRadius.Window)
 	local windowStroke = Utility.AddStroke(mainFrame, THEME.Colors.Border, 1, 0)
-	Utility.Create("UIGradient", {
+	local windowGradient = Utility.Create("UIGradient", {
 		Color = ColorSequence.new({
 			ColorSequenceKeypoint.new(0, THEME.Colors.Accent),
 			ColorSequenceKeypoint.new(0.35, THEME.Colors.Border),
@@ -540,86 +574,164 @@ function AetherUI:CreateWindow(opts)
 		Parent = windowStroke,
 	})
 	self.MainFrame = mainFrame
+	self:_RegisterFrame(mainFrame, 0)
 
-	-- Mobile Floating Re-Open Pill (Visible when UI is hidden)
+	self:_RegisterThemeUpdater(function(accent)
+		windowGradient.Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0, accent),
+			ColorSequenceKeypoint.new(0.35, THEME.Colors.Border),
+			ColorSequenceKeypoint.new(1, THEME.Colors.AccentSecondary),
+		})
+	end)
+
+	-- [Requirement 3] Global Background Image & Darkening Overlay
+	local bgImageLabel = Utility.Create("ImageLabel", {
+		Name = "BackgroundImage",
+		Size = UDim2.fromScale(1, 1),
+		Position = UDim2.fromScale(0, 0),
+		BackgroundTransparency = 1,
+		Image = tostring(bgImageAsset or ""),
+		ScaleType = Enum.ScaleType.Crop,
+		Visible = (bgImageAsset ~= nil and bgImageAsset ~= ""),
+		ZIndex = 0,
+		Parent = mainFrame,
+	})
+	Utility.AddCorner(bgImageLabel, THEME.CornerRadius.Window)
+
+	local bgOverlayFrame = Utility.Create("Frame", {
+		Name = "BackgroundOverlay",
+		Size = UDim2.fromScale(1, 1),
+		Position = UDim2.fromScale(0, 0),
+		BackgroundColor3 = Color3.new(0, 0, 0),
+		BackgroundTransparency = bgDarkening,
+		BorderSizePixel = 0,
+		Visible = (bgImageAsset ~= nil and bgImageAsset ~= ""),
+		ZIndex = 1,
+		Parent = mainFrame,
+	})
+	Utility.AddCorner(bgOverlayFrame, THEME.CornerRadius.Window)
+	self.BackgroundImageLabel = bgImageLabel
+	self.BackgroundOverlayFrame = bgOverlayFrame
+
+	function self:SetBackgroundImage(assetId, darkening)
+		local hasImage = (assetId ~= nil and tostring(assetId) ~= "")
+		bgImageLabel.Image = hasImage and tostring(assetId) or ""
+		bgImageLabel.Visible = hasImage
+		bgOverlayFrame.Visible = hasImage
+		if darkening ~= nil then
+			bgOverlayFrame.BackgroundTransparency = math.clamp(tonumber(darkening) or 0.6, 0, 1)
+		end
+	end
+
+	-- [Requirement 5] Smart Mobile Pill (Draggable & Auto-Size)
 	local mobilePill = Utility.Create("TextButton", {
 		Name = "MobileTogglePill",
 		AnchorPoint = Vector2.new(0.5, 0),
 		Position = UDim2.new(0.5, 0, 0, 14),
-		Size = UDim2.fromOffset(126, 32),
+		Size = UDim2.fromOffset(0, 0),
+		AutomaticSize = Enum.AutomaticSize.XY,
 		BackgroundColor3 = THEME.Colors.Topbar,
-		Font = THEME.Fonts.Bold,
-		TextSize = 12,
-		TextColor3 = THEME.Colors.Accent,
-		Text = "◆ Open " .. titleText,
+		Text = "",
 		AutoButtonColor = false,
 		Visible = false,
 		ZIndex = 750,
 		Parent = screenGui,
 	})
 	Utility.AddCorner(mobilePill, THEME.CornerRadius.Pill)
-	Utility.AddStroke(mobilePill, THEME.Colors.Accent, 1, 0.25)
+	Utility.AddPadding(mobilePill, 6, 6, 10, 10)
+	local pillStroke = Utility.AddStroke(mobilePill, THEME.Colors.Accent, 1, 0.25)
 
-	-- Topbar
+	local pillLabel = Utility.Create("TextLabel", {
+		Name = "PillText",
+		Size = UDim2.fromOffset(0, 0),
+		AutomaticSize = Enum.AutomaticSize.XY,
+		BackgroundTransparency = 1,
+		Font = THEME.Fonts.Bold,
+		TextSize = 12,
+		TextColor3 = THEME.Colors.Accent,
+		Text = "◆ Open " .. titleText,
+		ZIndex = 751,
+		Parent = mobilePill,
+	})
+	self.MobilePill = mobilePill
+
+	self:_RegisterThemeUpdater(function(accent)
+		pillStroke.Color = accent
+		pillLabel.TextColor3 = accent
+	end)
+
+	-- Topbar (ZIndex = 2+)
 	local topbar = Utility.Create("Frame", {
 		Name = "Topbar",
 		Size = UDim2.new(1, 0, 0, 48),
 		BackgroundColor3 = THEME.Colors.Topbar,
+		BackgroundTransparency = 0.15,
 		BorderSizePixel = 0,
+		ZIndex = 2,
 		Parent = mainFrame,
 	})
 	Utility.AddCorner(topbar, THEME.CornerRadius.Window)
-	Utility.Create("Frame", {
+	self:_RegisterFrame(topbar, 0.15)
+
+	local topbarPatch = Utility.Create("Frame", {
 		Size = UDim2.new(1, 0, 0, 10),
 		Position = UDim2.new(0, 0, 1, -10),
 		BackgroundColor3 = THEME.Colors.Topbar,
+		BackgroundTransparency = 0.15,
 		BorderSizePixel = 0,
+		ZIndex = 2,
 		Parent = topbar,
 	})
+	self:_RegisterFrame(topbarPatch, 0.15)
+
 	Utility.Create("Frame", {
 		Size = UDim2.new(1, 0, 0, 1),
 		Position = UDim2.new(0, 0, 1, -1),
 		BackgroundColor3 = THEME.Colors.Border,
 		BorderSizePixel = 0,
+		ZIndex = 3,
 		Parent = topbar,
 	})
 
-	-- Logo Icon
+	-- Logo Icon (Uncle Sam Trump default)
 	local logoIcon = Utility.Create("ImageLabel", {
 		Name = "Logo",
-		Size = UDim2.fromOffset(26, 26),
-		Position = UDim2.new(0, 14, 0.5, -13),
+		Size = UDim2.fromOffset(28, 28),
+		Position = UDim2.new(0, 12, 0.5, -14),
 		BackgroundTransparency = 1,
 		Image = logoAsset,
-		ImageColor3 = THEME.Colors.Accent,
+		ImageColor3 = Color3.new(1, 1, 1),
 		ScaleType = Enum.ScaleType.Fit,
+		ZIndex = 3,
 		Parent = topbar,
 	})
 	self.Logo = logoIcon
 
-	-- Title & Subtitle
-	Utility.Create("TextLabel", {
+	-- [Requirement 1] Custom Title Image (Replaces Title TextLabel)
+	local titleImage = Utility.Create("ImageLabel", {
 		Name = "Title",
-		Position = UDim2.fromOffset(48, 7),
-		Size = UDim2.new(1, -160, 0, 18),
+		Position = UDim2.fromOffset(48, 5),
+		Size = UDim2.fromOffset(150, 24),
 		BackgroundTransparency = 1,
-		Font = THEME.Fonts.Bold,
-		TextSize = 15,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextColor3 = THEME.Colors.Text,
-		Text = titleText,
+		Image = titleImageAsset,
+		ScaleType = Enum.ScaleType.Fit,
+		ZIndex = 3,
 		Parent = topbar,
 	})
+	self.TitleImage = titleImage
+
+	-- Subtitle
 	Utility.Create("TextLabel", {
 		Name = "Subtitle",
-		Position = UDim2.fromOffset(48, 25),
-		Size = UDim2.new(1, -160, 0, 15),
+		Position = UDim2.fromOffset(48, 28),
+		Size = UDim2.new(1, -160, 0, 14),
 		BackgroundTransparency = 1,
 		Font = THEME.Fonts.Regular,
 		TextSize = 11,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextColor3 = THEME.Colors.SubText,
 		Text = subtitleText,
+		ZIndex = 3,
 		Parent = topbar,
 	})
 
@@ -635,9 +747,11 @@ function AetherUI:CreateWindow(opts)
 		TextSize = 14,
 		TextColor3 = THEME.Colors.SubText,
 		Text = "—",
+		ZIndex = 3,
 		Parent = topbar,
 	})
 	Utility.AddCorner(hideBtn, THEME.CornerRadius.Small)
+	self:_RegisterFrame(hideBtn, 0)
 	self:AttachTooltip(hideBtn, "Hide Overlay (" .. Utility.FormatKey(self.ToggleKey) .. ")")
 
 	function self:SetVisible(state)
@@ -662,9 +776,54 @@ function AetherUI:CreateWindow(opts)
 	hideBtn.MouseButton1Click:Connect(function()
 		self:SetVisible(false)
 	end)
-	mobilePill.MouseButton1Click:Connect(function()
-		self:SetVisible(true)
-	end)
+
+	-- Draggable + Clickable Smart Mobile Pill Logic
+	do
+		local pillDragging = false
+		local pillPointer = nil
+		local pillIsMouse = false
+		local pillDragStart = Vector2.zero
+		local pillStartPos = UDim2.new()
+		local pillMoved = false
+
+		mobilePill.InputBegan:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+				pillDragging = true
+				pillPointer = input
+				pillIsMouse = (input.UserInputType == Enum.UserInputType.MouseButton1)
+				pillDragStart = Vector2.new(input.Position.X, input.Position.Y)
+				pillStartPos = mobilePill.Position
+				pillMoved = false
+
+				input.Changed:Connect(function()
+					if input.UserInputState == Enum.UserInputState.End then
+						if pillDragging and not pillMoved then
+							self:SetVisible(true)
+						end
+						pillDragging = false
+						pillPointer = nil
+					end
+				end)
+			end
+		end)
+
+		table.insert(self._connections, UserInputService.InputChanged:Connect(function(input)
+			if pillDragging and (input == pillPointer or (pillIsMouse and input.UserInputType == Enum.UserInputType.MouseMovement)) then
+				local delta = Vector2.new(input.Position.X, input.Position.Y) - pillDragStart
+				if delta.Magnitude > 5 then
+					pillMoved = true
+				end
+				if pillMoved then
+					mobilePill.Position = UDim2.new(
+						pillStartPos.X.Scale,
+						pillStartPos.X.Offset + delta.X,
+						pillStartPos.Y.Scale,
+						pillStartPos.Y.Offset + delta.Y
+					)
+				end
+			end
+		end))
+	end
 
 	table.insert(self._connections, UserInputService.InputBegan:Connect(function(input, gpe)
 		if not gpe and UserInputService:GetFocusedTextBox() == nil then
@@ -674,12 +833,13 @@ function AetherUI:CreateWindow(opts)
 		end
 	end))
 
-	-- Body Container (Sidebar + Pages)
+	-- Body Container (Sidebar + Pages, ZIndex = 2+)
 	local body = Utility.Create("Frame", {
 		Name = "Body",
 		Position = UDim2.fromOffset(0, 48),
 		Size = UDim2.new(1, 0, 1, -48),
 		BackgroundTransparency = 1,
+		ZIndex = 2,
 		Parent = mainFrame,
 	})
 
@@ -687,11 +847,13 @@ function AetherUI:CreateWindow(opts)
 		Name = "Sidebar",
 		Size = UDim2.new(0, 168, 1, 0),
 		BackgroundColor3 = THEME.Colors.Sidebar,
+		BackgroundTransparency = 0.2,
 		BorderSizePixel = 0,
 		ScrollBarThickness = 2,
 		ScrollBarImageColor3 = THEME.Colors.Accent,
 		AutomaticCanvasSize = Enum.AutomaticSize.Y,
 		CanvasSize = UDim2.new(0, 0, 0, 0),
+		ZIndex = 2,
 		Parent = body,
 	})
 	Utility.AddPadding(sidebar, 10, 10, 8, 8)
@@ -700,11 +862,17 @@ function AetherUI:CreateWindow(opts)
 		SortOrder = Enum.SortOrder.LayoutOrder,
 		Parent = sidebar,
 	})
+	self:_RegisterFrame(sidebar, 0.2)
+	self:_RegisterThemeUpdater(function(accent)
+		sidebar.ScrollBarImageColor3 = accent
+	end)
+
 	Utility.Create("Frame", {
 		Size = UDim2.new(0, 1, 1, 0),
 		Position = UDim2.fromOffset(168, 0),
 		BackgroundColor3 = THEME.Colors.Border,
 		BorderSizePixel = 0,
+		ZIndex = 3,
 		Parent = body,
 	})
 	self.Sidebar = sidebar
@@ -715,6 +883,7 @@ function AetherUI:CreateWindow(opts)
 		Size = UDim2.new(1, -169, 1, 0),
 		BackgroundTransparency = 1,
 		ClipsDescendants = true,
+		ZIndex = 2,
 		Parent = body,
 	})
 	self.PagesHolder = pagesHolder
@@ -803,6 +972,29 @@ function AetherUI:CreateWindow(opts)
 	return self
 end
 
+--// [Requirement 4] Global Theme Color & Transparency APIs
+function Window:SetThemeColor(newColor)
+	if typeof(newColor) ~= "Color3" then
+		return
+	end
+	THEME.Colors.Accent = newColor
+	THEME.Colors.Info = newColor
+	for _, updater in ipairs(self._themeUpdaters) do
+		task.spawn(updater, newColor)
+	end
+end
+
+function Window:SetTransparency(alpha)
+	local clamped = math.clamp(tonumber(alpha) or 0, 0, 0.95)
+	self._currentTransparency = clamped
+	for _, entry in ipairs(self._translatableFrames) do
+		local inst = entry.Instance
+		if inst and inst.Parent then
+			inst.BackgroundTransparency = math.clamp(entry.Base + clamped, 0, 0.95)
+		end
+	end
+end
+
 --// Toast Notification System
 function Window:Notify(opts)
 	opts = type(opts) == "table" and opts or { Content = tostring(opts) }
@@ -812,7 +1004,7 @@ function Window:Notify(opts)
 	local duration = tonumber(opts.Duration) or 4
 
 	local typeColors = {
-		Info = THEME.Colors.Info,
+		Info = THEME.Colors.Accent,
 		Success = THEME.Colors.Success,
 		Warning = THEME.Colors.Warning,
 		Error = THEME.Colors.Error,
@@ -912,7 +1104,7 @@ function Window:Notify(opts)
 	task.delay(duration, CloseToast)
 end
 
---// Tab Creation (Supports Text + Left/Right Icons)
+--// Tab Creation (Supports Text + Left/Right Icons, ZIndex = 2+)
 function Window:CreateTab(opts, iconArg, iconPosArg)
 	local cfg = type(opts) == "table" and opts or {
 		Title = tostring(opts or "Tab"),
@@ -937,6 +1129,7 @@ function Window:CreateTab(opts, iconArg, iconPosArg)
 		BackgroundTransparency = 1,
 		AutoButtonColor = false,
 		Text = "",
+		ZIndex = 3,
 		Parent = self.Sidebar,
 	})
 	Utility.AddCorner(tabBtn, THEME.CornerRadius.Element)
@@ -946,6 +1139,7 @@ function Window:CreateTab(opts, iconArg, iconPosArg)
 		Size = UDim2.fromOffset(3, 0),
 		BackgroundColor3 = THEME.Colors.Accent,
 		BorderSizePixel = 0,
+		ZIndex = 4,
 		Parent = tabBtn,
 	})
 	Utility.AddCorner(indicator, THEME.CornerRadius.Pill)
@@ -960,6 +1154,7 @@ function Window:CreateTab(opts, iconArg, iconPosArg)
 			BackgroundTransparency = 1,
 			Image = tabIcon,
 			ImageColor3 = THEME.Colors.SubText,
+			ZIndex = 4,
 			Parent = tabBtn,
 		})
 	end
@@ -975,6 +1170,7 @@ function Window:CreateTab(opts, iconArg, iconPosArg)
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextColor3 = THEME.Colors.SubText,
 		Text = tabTitle,
+		ZIndex = 4,
 		Parent = tabBtn,
 	})
 
@@ -988,6 +1184,7 @@ function Window:CreateTab(opts, iconArg, iconPosArg)
 		AutomaticCanvasSize = Enum.AutomaticSize.Y,
 		CanvasSize = UDim2.new(0, 0, 0, 0),
 		Visible = false,
+		ZIndex = 2,
 		Parent = self.PagesHolder,
 	})
 	Utility.AddPadding(page, 12, 14, 12, 12)
@@ -996,6 +1193,14 @@ function Window:CreateTab(opts, iconArg, iconPosArg)
 		SortOrder = Enum.SortOrder.LayoutOrder,
 		Parent = page,
 	})
+
+	self:_RegisterThemeUpdater(function(accent)
+		indicator.BackgroundColor3 = accent
+		page.ScrollBarImageColor3 = accent
+		if self.ActiveTab == tabObj and iconImg then
+			iconImg.ImageColor3 = accent
+		end
+	end)
 
 	tabObj.Button = tabBtn
 	tabObj.Page = page
@@ -1046,11 +1251,11 @@ function Window:CreateTab(opts, iconArg, iconPosArg)
 end
 Window.AddTab = Window.CreateTab
 
---// Section Creation (Scrollable / Overflow-Safe Grouping)
+--// Section Creation (Scrollable / Overflow-Safe Grouping, ZIndex = 2+)
 function Tab:CreateSection(opts)
 	local cfg = type(opts) == "table" and opts or { Title = tostring(opts or "Section") }
 	local secTitle = cfg.Title or cfg.Name or "Section"
-	local maxHeight = tonumber(cfg.MaxHeight) -- Optional bounded scrollable section height
+	local maxHeight = tonumber(cfg.MaxHeight)
 
 	local secObj = setmetatable({
 		Tab = self,
@@ -1062,6 +1267,8 @@ function Tab:CreateSection(opts)
 		Size = UDim2.new(1, 0, 0, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
 		BackgroundColor3 = THEME.Colors.Section,
+		BackgroundTransparency = 0.15,
+		ZIndex = 2,
 		Parent = self.Page,
 	})
 	Utility.AddCorner(card, THEME.CornerRadius.Section)
@@ -1072,9 +1279,10 @@ function Tab:CreateSection(opts)
 		SortOrder = Enum.SortOrder.LayoutOrder,
 		Parent = card,
 	})
+	self.Window:_RegisterFrame(card, 0.15)
 
 	if secTitle ~= "" then
-		Utility.Create("TextLabel", {
+		local secHeader = Utility.Create("TextLabel", {
 			Size = UDim2.new(1, 0, 0, 18),
 			BackgroundTransparency = 1,
 			Font = THEME.Fonts.Bold,
@@ -1082,8 +1290,12 @@ function Tab:CreateSection(opts)
 			TextXAlignment = Enum.TextXAlignment.Left,
 			TextColor3 = THEME.Colors.Accent,
 			Text = string.upper(secTitle),
+			ZIndex = 3,
 			Parent = card,
 		})
+		self.Window:_RegisterThemeUpdater(function(accent)
+			secHeader.TextColor3 = accent
+		end)
 	end
 
 	local contentParent
@@ -1096,13 +1308,18 @@ function Tab:CreateSection(opts)
 			ScrollBarImageColor3 = THEME.Colors.Accent,
 			AutomaticCanvasSize = Enum.AutomaticSize.Y,
 			CanvasSize = UDim2.new(0, 0, 0, 0),
+			ZIndex = 3,
 			Parent = card,
 		})
+		self.Window:_RegisterThemeUpdater(function(accent)
+			contentParent.ScrollBarImageColor3 = accent
+		end)
 	else
 		contentParent = Utility.Create("Frame", {
 			Size = UDim2.new(1, 0, 0, 0),
 			AutomaticSize = Enum.AutomaticSize.Y,
 			BackgroundTransparency = 1,
+			ZIndex = 3,
 			Parent = card,
 		})
 	end
@@ -1126,7 +1343,7 @@ function Tab:_GetDefaultSection()
 	return self._defaultSection
 end
 
---// UI Element 1: Toggle
+--// [Requirement 2] UI Element 1: Toggle (Custom ImageLabel Knob)
 function Section:AddToggle(opts, defaultArg, callbackArg)
 	local cfg = type(opts) == "table" and opts or {
 		Title = tostring(opts or "Toggle"),
@@ -1144,10 +1361,12 @@ function Section:AddToggle(opts, defaultArg, callbackArg)
 		BackgroundColor3 = THEME.Colors.Element,
 		AutoButtonColor = false,
 		Text = "",
+		ZIndex = 3,
 		Parent = self.Container,
 	})
 	Utility.AddCorner(row, THEME.CornerRadius.Element)
 	Utility.AddStroke(row, THEME.Colors.Border, 1, 0.5)
+	self.Window:_RegisterFrame(row, 0)
 
 	Utility.Create("TextLabel", {
 		Position = UDim2.fromOffset(12, 0),
@@ -1158,24 +1377,32 @@ function Section:AddToggle(opts, defaultArg, callbackArg)
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextColor3 = THEME.Colors.Text,
 		Text = title,
+		ZIndex = 4,
 		Parent = row,
 	})
 
 	local switchBg = Utility.Create("Frame", {
 		AnchorPoint = Vector2.new(1, 0.5),
 		Position = UDim2.new(1, -12, 0.5, 0),
-		Size = UDim2.fromOffset(40, 20),
+		Size = UDim2.fromOffset(42, 22),
 		BackgroundColor3 = THEME.Colors.Sidebar,
+		ZIndex = 4,
 		Parent = row,
 	})
 	Utility.AddCorner(switchBg, THEME.CornerRadius.Pill)
 	local switchStroke = Utility.AddStroke(switchBg, THEME.Colors.Border, 1, 0.2)
+	self.Window:_RegisterFrame(switchBg, 0)
 
-	local knob = Utility.Create("Frame", {
+	-- Custom Toggle Knob ImageLabel
+	local knob = Utility.Create("ImageLabel", {
+		Name = "Knob",
 		AnchorPoint = Vector2.new(0, 0.5),
 		Position = UDim2.new(0, 3, 0.5, 0),
-		Size = UDim2.fromOffset(14, 14),
-		BackgroundColor3 = THEME.Colors.SubText,
+		Size = UDim2.fromOffset(16, 16),
+		BackgroundTransparency = 1,
+		Image = ASSETS.ToggleKnob,
+		ScaleType = Enum.ScaleType.Fit,
+		ZIndex = 5,
 		Parent = switchBg,
 	})
 	Utility.AddCorner(knob, THEME.CornerRadius.Pill)
@@ -1188,11 +1415,14 @@ function Section:AddToggle(opts, defaultArg, callbackArg)
 			Color = state and THEME.Colors.Accent or THEME.Colors.Border,
 		})
 		Utility.Tween(knob, THEME.Tween.Fast, {
-			Position = state and UDim2.new(1, -17, 0.5, 0) or UDim2.new(0, 3, 0.5, 0),
-			BackgroundColor3 = state and THEME.Colors.Background or THEME.Colors.SubText,
+			Position = state and UDim2.new(1, -19, 0.5, 0) or UDim2.new(0, 3, 0.5, 0),
 		})
 	end
 	ctrl._applyVisual(defaultVal)
+
+	self.Window:_RegisterThemeUpdater(function()
+		ctrl._applyVisual(ctrl:GetValue())
+	end)
 
 	row.MouseEnter:Connect(function()
 		Utility.Tween(row, THEME.Tween.Fast, { BackgroundColor3 = THEME.Colors.ElementHover })
@@ -1232,10 +1462,12 @@ function Section:AddSlider(opts, minArg, maxArg, defaultArg, decimalsArg, callba
 	local box = Utility.Create("Frame", {
 		Size = UDim2.new(1, 0, 0, 52),
 		BackgroundColor3 = THEME.Colors.Element,
+		ZIndex = 3,
 		Parent = self.Container,
 	})
 	Utility.AddCorner(box, THEME.CornerRadius.Element)
 	Utility.AddStroke(box, THEME.Colors.Border, 1, 0.5)
+	self.Window:_RegisterFrame(box, 0)
 
 	Utility.Create("TextLabel", {
 		Position = UDim2.fromOffset(12, 6),
@@ -1246,6 +1478,7 @@ function Section:AddSlider(opts, minArg, maxArg, defaultArg, decimalsArg, callba
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextColor3 = THEME.Colors.Text,
 		Text = title,
+		ZIndex = 4,
 		Parent = box,
 	})
 
@@ -1259,22 +1492,27 @@ function Section:AddSlider(opts, minArg, maxArg, defaultArg, decimalsArg, callba
 		TextColor3 = THEME.Colors.Accent,
 		ClearTextOnFocus = false,
 		Text = tostring(ctrl:GetValue()) .. suffix,
+		ZIndex = 4,
 		Parent = box,
 	})
 	Utility.AddCorner(valueInput, THEME.CornerRadius.Small)
 	Utility.AddStroke(valueInput, THEME.Colors.Border, 1, 0.4)
+	self.Window:_RegisterFrame(valueInput, 0)
 
 	local track = Utility.Create("Frame", {
 		Position = UDim2.fromOffset(12, 35),
 		Size = UDim2.new(1, -24, 0, 6),
 		BackgroundColor3 = THEME.Colors.Sidebar,
+		ZIndex = 4,
 		Parent = box,
 	})
 	Utility.AddCorner(track, THEME.CornerRadius.Pill)
+	self.Window:_RegisterFrame(track, 0)
 
 	local fill = Utility.Create("Frame", {
 		Size = UDim2.fromScale(0, 1),
 		BackgroundColor3 = THEME.Colors.Accent,
+		ZIndex = 5,
 		Parent = track,
 	})
 	Utility.AddCorner(fill, THEME.CornerRadius.Pill)
@@ -1284,9 +1522,15 @@ function Section:AddSlider(opts, minArg, maxArg, defaultArg, decimalsArg, callba
 		Position = UDim2.fromScale(0, 0.5),
 		Size = UDim2.fromOffset(12, 12),
 		BackgroundColor3 = THEME.Colors.Text,
+		ZIndex = 6,
 		Parent = track,
 	})
 	Utility.AddCorner(thumb, THEME.CornerRadius.Pill)
+
+	self.Window:_RegisterThemeUpdater(function(accent)
+		fill.BackgroundColor3 = accent
+		valueInput.TextColor3 = accent
+	end)
 
 	ctrl._applyVisual = function(val)
 		local clamped = Utility.Round(math.clamp(tonumber(val) or minVal, minVal, maxVal), decimals)
@@ -1381,16 +1625,19 @@ function Section:AddDropdown(opts, optionsArg, defaultArg, multiArg, callbackArg
 		Size = UDim2.new(1, 0, 0, 38),
 		BackgroundColor3 = THEME.Colors.Element,
 		ClipsDescendants = true,
+		ZIndex = 3,
 		Parent = self.Container,
 	})
 	Utility.AddCorner(container, THEME.CornerRadius.Element)
 	Utility.AddStroke(container, THEME.Colors.Border, 1, 0.5)
+	self.Window:_RegisterFrame(container, 0)
 
 	local headerBtn = Utility.Create("TextButton", {
 		Size = UDim2.new(1, 0, 0, 38),
 		BackgroundTransparency = 1,
 		AutoButtonColor = false,
 		Text = "",
+		ZIndex = 4,
 		Parent = container,
 	})
 
@@ -1403,6 +1650,7 @@ function Section:AddDropdown(opts, optionsArg, defaultArg, multiArg, callbackArg
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextColor3 = THEME.Colors.Text,
 		Text = title,
+		ZIndex = 4,
 		Parent = headerBtn,
 	})
 
@@ -1416,6 +1664,7 @@ function Section:AddDropdown(opts, optionsArg, defaultArg, multiArg, callbackArg
 		TextXAlignment = Enum.TextXAlignment.Right,
 		TextColor3 = THEME.Colors.Accent,
 		Text = "",
+		ZIndex = 4,
 		Parent = headerBtn,
 	})
 
@@ -1428,6 +1677,7 @@ function Section:AddDropdown(opts, optionsArg, defaultArg, multiArg, callbackArg
 		TextSize = 12,
 		TextColor3 = THEME.Colors.SubText,
 		Text = "▾",
+		ZIndex = 4,
 		Parent = headerBtn,
 	})
 
@@ -1442,11 +1692,13 @@ function Section:AddDropdown(opts, optionsArg, defaultArg, multiArg, callbackArg
 		PlaceholderColor3 = THEME.Colors.Muted,
 		ClearTextOnFocus = false,
 		Text = "",
+		ZIndex = 4,
 		Parent = container,
 	})
 	Utility.AddCorner(searchBox, THEME.CornerRadius.Small)
 	Utility.AddPadding(searchBox, 0, 0, 8, 8)
 	Utility.AddStroke(searchBox, THEME.Colors.Border, 1, 0.5)
+	self.Window:_RegisterFrame(searchBox, 0)
 
 	local listScroll = Utility.Create("ScrollingFrame", {
 		Position = UDim2.fromOffset(8, 74),
@@ -1457,6 +1709,7 @@ function Section:AddDropdown(opts, optionsArg, defaultArg, multiArg, callbackArg
 		ScrollBarImageColor3 = THEME.Colors.Accent,
 		AutomaticCanvasSize = Enum.AutomaticSize.Y,
 		CanvasSize = UDim2.new(0, 0, 0, 0),
+		ZIndex = 4,
 		Parent = container,
 	})
 	Utility.AddCorner(listScroll, THEME.CornerRadius.Small)
@@ -1466,6 +1719,7 @@ function Section:AddDropdown(opts, optionsArg, defaultArg, multiArg, callbackArg
 		SortOrder = Enum.SortOrder.LayoutOrder,
 		Parent = listScroll,
 	})
+	self.Window:_RegisterFrame(listScroll, 0)
 
 	local optionButtons = {}
 
@@ -1487,12 +1741,19 @@ function Section:AddDropdown(opts, optionsArg, defaultArg, multiArg, callbackArg
 	local function RefreshHighlights()
 		local cur = ctrl:GetValue()
 		selectedLabel.Text = FormatDisplay(cur)
+		selectedLabel.TextColor3 = THEME.Colors.Accent
+		listScroll.ScrollBarImageColor3 = THEME.Colors.Accent
 		for optName, btnRefs in pairs(optionButtons) do
 			local active = isMulti and (type(cur) == "table" and cur[optName] == true) or (tostring(cur) == optName)
 			btnRefs.Label.TextColor3 = active and THEME.Colors.Accent or THEME.Colors.SubText
+			btnRefs.Check.TextColor3 = THEME.Colors.Accent
 			btnRefs.Check.Text = active and "✓" or ""
 		end
 	end
+
+	self.Window:_RegisterThemeUpdater(function()
+		RefreshHighlights()
+	end)
 
 	local function RebuildOptions()
 		for _, child in ipairs(listScroll:GetChildren()) do
@@ -1511,6 +1772,7 @@ function Section:AddDropdown(opts, optionsArg, defaultArg, multiArg, callbackArg
 					BackgroundTransparency = 0.35,
 					AutoButtonColor = false,
 					Text = "",
+					ZIndex = 5,
 					Parent = listScroll,
 				})
 				Utility.AddCorner(itemBtn, THEME.CornerRadius.Small)
@@ -1523,6 +1785,7 @@ function Section:AddDropdown(opts, optionsArg, defaultArg, multiArg, callbackArg
 					TextXAlignment = Enum.TextXAlignment.Left,
 					TextColor3 = THEME.Colors.SubText,
 					Text = optStr,
+					ZIndex = 6,
 					Parent = itemBtn,
 				})
 				local chk = Utility.Create("TextLabel", {
@@ -1534,6 +1797,7 @@ function Section:AddDropdown(opts, optionsArg, defaultArg, multiArg, callbackArg
 					TextSize = 12,
 					TextColor3 = THEME.Colors.Accent,
 					Text = "",
+					ZIndex = 6,
 					Parent = itemBtn,
 				})
 				optionButtons[optStr] = { Button = itemBtn, Label = lbl, Check = chk }
@@ -1604,16 +1868,19 @@ function Section:AddColorPicker(opts, defaultColorArg, callbackArg)
 		Size = UDim2.new(1, 0, 0, 38),
 		BackgroundColor3 = THEME.Colors.Element,
 		ClipsDescendants = true,
+		ZIndex = 3,
 		Parent = self.Container,
 	})
 	Utility.AddCorner(container, THEME.CornerRadius.Element)
 	Utility.AddStroke(container, THEME.Colors.Border, 1, 0.5)
+	self.Window:_RegisterFrame(container, 0)
 
 	local header = Utility.Create("TextButton", {
 		Size = UDim2.new(1, 0, 0, 38),
 		BackgroundTransparency = 1,
 		AutoButtonColor = false,
 		Text = "",
+		ZIndex = 4,
 		Parent = container,
 	})
 
@@ -1626,6 +1893,7 @@ function Section:AddColorPicker(opts, defaultColorArg, callbackArg)
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextColor3 = THEME.Colors.Text,
 		Text = title,
+		ZIndex = 4,
 		Parent = header,
 	})
 
@@ -1639,6 +1907,7 @@ function Section:AddColorPicker(opts, defaultColorArg, callbackArg)
 		TextXAlignment = Enum.TextXAlignment.Right,
 		TextColor3 = THEME.Colors.SubText,
 		Text = Utility.ColorToHex(defaultColor),
+		ZIndex = 4,
 		Parent = header,
 	})
 
@@ -1647,6 +1916,7 @@ function Section:AddColorPicker(opts, defaultColorArg, callbackArg)
 		Position = UDim2.new(1, -12, 0.5, 0),
 		Size = UDim2.fromOffset(24, 18),
 		BackgroundColor3 = defaultColor,
+		ZIndex = 4,
 		Parent = header,
 	})
 	Utility.AddCorner(preview, THEME.CornerRadius.Small)
@@ -1657,6 +1927,7 @@ function Section:AddColorPicker(opts, defaultColorArg, callbackArg)
 		Position = UDim2.fromOffset(12, 44),
 		Size = UDim2.new(1, -50, 0, 96),
 		BackgroundColor3 = Color3.fromHSV(h, 1, 1),
+		ZIndex = 4,
 		Parent = container,
 	})
 	Utility.AddCorner(svBox, THEME.CornerRadius.Small)
@@ -1665,6 +1936,7 @@ function Section:AddColorPicker(opts, defaultColorArg, callbackArg)
 		Size = UDim2.fromScale(1, 1),
 		BackgroundColor3 = Color3.new(1, 1, 1),
 		BorderSizePixel = 0,
+		ZIndex = 5,
 		Parent = svBox,
 	})
 	Utility.AddCorner(satOverlay, THEME.CornerRadius.Small)
@@ -1680,6 +1952,7 @@ function Section:AddColorPicker(opts, defaultColorArg, callbackArg)
 		Size = UDim2.fromScale(1, 1),
 		BackgroundColor3 = Color3.new(0, 0, 0),
 		BorderSizePixel = 0,
+		ZIndex = 6,
 		Parent = svBox,
 	})
 	Utility.AddCorner(valOverlay, THEME.CornerRadius.Small)
@@ -1697,7 +1970,7 @@ function Section:AddColorPicker(opts, defaultColorArg, callbackArg)
 		Position = UDim2.fromScale(s, 1 - v),
 		Size = UDim2.fromOffset(10, 10),
 		BackgroundColor3 = Color3.new(1, 1, 1),
-		ZIndex = 5,
+		ZIndex = 7,
 		Parent = svBox,
 	})
 	Utility.AddCorner(svCursor, THEME.CornerRadius.Pill)
@@ -1709,6 +1982,7 @@ function Section:AddColorPicker(opts, defaultColorArg, callbackArg)
 		Position = UDim2.new(1, -12, 0, 44),
 		Size = UDim2.fromOffset(18, 96),
 		BackgroundColor3 = Color3.new(1, 1, 1),
+		ZIndex = 4,
 		Parent = container,
 	})
 	Utility.AddCorner(hueBar, THEME.CornerRadius.Small)
@@ -1731,6 +2005,7 @@ function Section:AddColorPicker(opts, defaultColorArg, callbackArg)
 		Position = UDim2.fromScale(0.5, h),
 		Size = UDim2.new(1, 4, 0, 4),
 		BackgroundColor3 = Color3.new(1, 1, 1),
+		ZIndex = 5,
 		Parent = hueBar,
 	})
 	Utility.AddStroke(hueCursor, Color3.new(0, 0, 0), 1, 0)
@@ -1752,18 +2027,21 @@ function Section:AddColorPicker(opts, defaultColorArg, callbackArg)
 			TextSize = 11,
 			TextColor3 = ch.Color,
 			Text = ch.Name,
+			ZIndex = 4,
 			Parent = container,
 		})
 		local cTrack = Utility.Create("Frame", {
 			Position = UDim2.fromOffset(30, ch.Y + 2),
 			Size = UDim2.new(1, -76, 0, 5),
 			BackgroundColor3 = THEME.Colors.Sidebar,
+			ZIndex = 4,
 			Parent = container,
 		})
 		Utility.AddCorner(cTrack, THEME.CornerRadius.Pill)
 		local cFill = Utility.Create("Frame", {
 			Size = UDim2.fromScale(0, 1),
 			BackgroundColor3 = ch.Color,
+			ZIndex = 5,
 			Parent = cTrack,
 		})
 		Utility.AddCorner(cFill, THEME.CornerRadius.Pill)
@@ -1777,6 +2055,7 @@ function Section:AddColorPicker(opts, defaultColorArg, callbackArg)
 			TextXAlignment = Enum.TextXAlignment.Right,
 			TextColor3 = THEME.Colors.SubText,
 			Text = "0",
+			ZIndex = 4,
 			Parent = container,
 		})
 		rgbBars[idx] = { Track = cTrack, Fill = cFill, Label = cNum }
@@ -1912,10 +2191,12 @@ function Section:AddKeybind(opts, defaultKeyArg, callbackArg)
 	local row = Utility.Create("Frame", {
 		Size = UDim2.new(1, 0, 0, 36),
 		BackgroundColor3 = THEME.Colors.Element,
+		ZIndex = 3,
 		Parent = self.Container,
 	})
 	Utility.AddCorner(row, THEME.CornerRadius.Element)
 	Utility.AddStroke(row, THEME.Colors.Border, 1, 0.5)
+	self.Window:_RegisterFrame(row, 0)
 
 	Utility.Create("TextLabel", {
 		Position = UDim2.fromOffset(12, 0),
@@ -1926,6 +2207,7 @@ function Section:AddKeybind(opts, defaultKeyArg, callbackArg)
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextColor3 = THEME.Colors.Text,
 		Text = title,
+		ZIndex = 4,
 		Parent = row,
 	})
 
@@ -1939,10 +2221,16 @@ function Section:AddKeybind(opts, defaultKeyArg, callbackArg)
 		TextSize = 11,
 		TextColor3 = THEME.Colors.Accent,
 		Text = "[" .. Utility.FormatKey(defaultKey) .. "]",
+		ZIndex = 4,
 		Parent = row,
 	})
 	Utility.AddCorner(bindBtn, THEME.CornerRadius.Small)
 	local bindStroke = Utility.AddStroke(bindBtn, THEME.Colors.Border, 1, 0.3)
+	self.Window:_RegisterFrame(bindBtn, 0)
+
+	self.Window:_RegisterThemeUpdater(function(accent)
+		bindBtn.TextColor3 = accent
+	end)
 
 	ctrl._applyVisual = function(keyItem)
 		bindBtn.Text = "[" .. Utility.FormatKey(keyItem) .. "]"
@@ -1998,10 +2286,12 @@ function Section:AddTextbox(opts, placeholderArg, passwordArg, callbackArg)
 	local box = Utility.Create("Frame", {
 		Size = UDim2.new(1, 0, 0, 60),
 		BackgroundColor3 = THEME.Colors.Element,
+		ZIndex = 3,
 		Parent = self.Container,
 	})
 	Utility.AddCorner(box, THEME.CornerRadius.Element)
 	Utility.AddStroke(box, THEME.Colors.Border, 1, 0.5)
+	self.Window:_RegisterFrame(box, 0)
 
 	Utility.Create("TextLabel", {
 		Position = UDim2.fromOffset(12, 5),
@@ -2012,6 +2302,7 @@ function Section:AddTextbox(opts, placeholderArg, passwordArg, callbackArg)
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextColor3 = THEME.Colors.SubText,
 		Text = title,
+		ZIndex = 4,
 		Parent = box,
 	})
 
@@ -2020,10 +2311,12 @@ function Section:AddTextbox(opts, placeholderArg, passwordArg, callbackArg)
 		Size = UDim2.new(1, -20, 0, 26),
 		BackgroundColor3 = THEME.Colors.Sidebar,
 		ClipsDescendants = true,
+		ZIndex = 4,
 		Parent = box,
 	})
 	Utility.AddCorner(inputHolder, THEME.CornerRadius.Small)
 	local inputStroke = Utility.AddStroke(inputHolder, THEME.Colors.Border, 1, 0.35)
+	self.Window:_RegisterFrame(inputHolder, 0)
 
 	local rightOffset = isPassword and 32 or 8
 	local maskLabel = Utility.Create("TextLabel", {
@@ -2036,6 +2329,7 @@ function Section:AddTextbox(opts, placeholderArg, passwordArg, callbackArg)
 		TextColor3 = THEME.Colors.Text,
 		Visible = isPassword,
 		Text = "",
+		ZIndex = 5,
 		Parent = inputHolder,
 	})
 
@@ -2052,6 +2346,7 @@ function Section:AddTextbox(opts, placeholderArg, passwordArg, callbackArg)
 		PlaceholderColor3 = THEME.Colors.Muted,
 		ClearTextOnFocus = false,
 		Text = defaultText,
+		ZIndex = 5,
 		Parent = inputHolder,
 	})
 
@@ -2085,6 +2380,7 @@ function Section:AddTextbox(opts, placeholderArg, passwordArg, callbackArg)
 			TextSize = 11,
 			TextColor3 = THEME.Colors.SubText,
 			Text = "👁",
+			ZIndex = 6,
 			Parent = inputHolder,
 		})
 		eyeBtn.MouseButton1Click:Connect(function()
@@ -2133,22 +2429,29 @@ function Section:AddButton(opts, callbackArg, iconArg, iconPosArg)
 		BackgroundColor3 = THEME.Colors.Element,
 		AutoButtonColor = false,
 		Text = "",
+		ZIndex = 3,
 		Parent = self.Container,
 	})
 	Utility.AddCorner(btn, THEME.CornerRadius.Element)
 	local stroke = Utility.AddStroke(btn, THEME.Colors.Border, 1, 0.4)
+	self.Window:_RegisterFrame(btn, 0)
 
 	local hasIcon = (icon ~= "")
+	local iconImg = nil
 	if hasIcon then
-		Utility.Create("ImageLabel", {
+		iconImg = Utility.Create("ImageLabel", {
 			AnchorPoint = Vector2.new(iconPos == "Right" and 1 or 0, 0.5),
 			Position = iconPos == "Right" and UDim2.new(1, -12, 0.5, 0) or UDim2.new(0, 12, 0.5, 0),
 			Size = UDim2.fromOffset(16, 16),
 			BackgroundTransparency = 1,
 			Image = icon,
 			ImageColor3 = THEME.Colors.Accent,
+			ZIndex = 4,
 			Parent = btn,
 		})
+		self.Window:_RegisterThemeUpdater(function(accent)
+			iconImg.ImageColor3 = accent
+		end)
 	end
 
 	local lbl = Utility.Create("TextLabel", {
@@ -2160,6 +2463,7 @@ function Section:AddButton(opts, callbackArg, iconArg, iconPosArg)
 		TextXAlignment = hasIcon and Enum.TextXAlignment.Left or Enum.TextXAlignment.Center,
 		TextColor3 = THEME.Colors.Text,
 		Text = title,
+		ZIndex = 4,
 		Parent = btn,
 	})
 
@@ -2190,7 +2494,7 @@ function Section:AddImage(opts, imageArg, heightArg)
 		Image = imageArg or tostring(opts or ""),
 		Height = heightArg,
 	}
-	local asset = cfg.Image or "rbxassetid://10723407389"
+	local asset = cfg.Image or ASSETS.WindowLogo
 	local height = tonumber(cfg.Height) or 96
 	local caption = cfg.Title or ""
 
@@ -2199,10 +2503,12 @@ function Section:AddImage(opts, imageArg, heightArg)
 	local frame = Utility.Create("Frame", {
 		Size = UDim2.new(1, 0, 0, height + (caption ~= "" and 24 or 12)),
 		BackgroundColor3 = THEME.Colors.Element,
+		ZIndex = 3,
 		Parent = self.Container,
 	})
 	Utility.AddCorner(frame, THEME.CornerRadius.Element)
 	Utility.AddStroke(frame, THEME.Colors.Border, 1, 0.5)
+	self.Window:_RegisterFrame(frame, 0)
 
 	local img = Utility.Create("ImageLabel", {
 		Position = UDim2.fromOffset(8, 6),
@@ -2210,6 +2516,7 @@ function Section:AddImage(opts, imageArg, heightArg)
 		BackgroundTransparency = 1,
 		Image = asset,
 		ScaleType = cfg.ScaleType or Enum.ScaleType.Fit,
+		ZIndex = 4,
 		Parent = frame,
 	})
 
@@ -2222,6 +2529,7 @@ function Section:AddImage(opts, imageArg, heightArg)
 			TextSize = 11,
 			TextColor3 = THEME.Colors.SubText,
 			Text = caption,
+			ZIndex = 4,
 			Parent = frame,
 		})
 	end
@@ -2242,7 +2550,7 @@ function Section:AddImageButton(opts, imageArg, callbackArg)
 		Callback = callbackArg,
 	}
 	local title = cfg.Title or ""
-	local asset = cfg.Image or "rbxassetid://10723407389"
+	local asset = cfg.Image or ASSETS.WindowLogo
 	local height = tonumber(cfg.Height) or 64
 
 	local ctrl = BaseControl.new(0, "ImageButton", cfg.Callback)
@@ -2253,10 +2561,12 @@ function Section:AddImageButton(opts, imageArg, callbackArg)
 		AutoButtonColor = false,
 		Image = asset,
 		ScaleType = cfg.ScaleType or Enum.ScaleType.Fit,
+		ZIndex = 3,
 		Parent = self.Container,
 	})
 	Utility.AddCorner(btn, THEME.CornerRadius.Element)
 	local stroke = Utility.AddStroke(btn, THEME.Colors.Border, 1, 0.4)
+	self.Window:_RegisterFrame(btn, 0)
 
 	if title ~= "" then
 		Utility.Create("TextLabel", {
@@ -2269,6 +2579,7 @@ function Section:AddImageButton(opts, imageArg, callbackArg)
 			TextXAlignment = Enum.TextXAlignment.Left,
 			TextColor3 = THEME.Colors.Text,
 			Text = title,
+			ZIndex = 4,
 			Parent = btn,
 		})
 	end
@@ -2306,6 +2617,7 @@ function Section:AddLabel(textOrOpts)
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextColor3 = THEME.Colors.Text,
 		Text = txt,
+		ZIndex = 3,
 		Parent = self.Container,
 	})
 	Utility.AddPadding(lbl, 3, 3, 4, 4)
@@ -2335,6 +2647,7 @@ function Section:AddParagraph(opts, contentArg)
 		Size = UDim2.new(1, 0, 0, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
 		BackgroundColor3 = THEME.Colors.Element,
+		ZIndex = 3,
 		Parent = self.Container,
 	})
 	Utility.AddCorner(card, THEME.CornerRadius.Element)
@@ -2345,6 +2658,7 @@ function Section:AddParagraph(opts, contentArg)
 		SortOrder = Enum.SortOrder.LayoutOrder,
 		Parent = card,
 	})
+	self.Window:_RegisterFrame(card, 0)
 
 	local titleLbl = Utility.Create("TextLabel", {
 		Size = UDim2.new(1, 0, 0, 0),
@@ -2357,6 +2671,7 @@ function Section:AddParagraph(opts, contentArg)
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextColor3 = THEME.Colors.Text,
 		Text = heading,
+		ZIndex = 4,
 		Parent = card,
 	})
 
@@ -2371,6 +2686,7 @@ function Section:AddParagraph(opts, contentArg)
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextColor3 = THEME.Colors.SubText,
 		Text = body,
+		ZIndex = 4,
 		Parent = card,
 	})
 
@@ -2386,7 +2702,7 @@ function Section:AddParagraph(opts, contentArg)
 	return ctrl
 end
 
--- Forward direct Tab:Add* calls seamlessly to a default Section (DeepSeek / Quick-Hook Compatible)
+-- Forward direct Tab:Add* calls seamlessly to a default Section
 for _, methodName in ipairs({
 	"AddToggle",
 	"AddSlider",
@@ -2405,7 +2721,7 @@ for _, methodName in ipairs({
 	end
 end
 
---// Built-In Config Tab Generator (Save, Load, Delete, Refresh)
+--// Built-In Config Tab Generator (Save, Load, Delete, Refresh + Live Theme/Transparency)
 function Window:CreateConfigTab(tabTitle)
 	local cfgTab = self:CreateTab({
 		Title = tabTitle or "Configs",
@@ -2485,93 +2801,57 @@ function Window:CreateConfigTab(tabTitle)
 		end,
 	})
 
+	local uiSec = cfgTab:CreateSection("Interface Customization")
+	uiSec:AddColorPicker({
+		Title = "Global Accent Color",
+		Default = THEME.Colors.Accent,
+		Flag = "UI_GlobalAccent",
+		Callback = function(col)
+			self:SetThemeColor(col)
+		end,
+	})
+
+	uiSec:AddSlider({
+		Title = "Window Transparency",
+		Min = 0,
+		Max = 0.85,
+		Default = 0,
+		Decimals = 2,
+		Flag = "UI_WindowTransparency",
+		Callback = function(alpha)
+			self:SetTransparency(alpha)
+		end,
+	})
+
+	uiSec:AddSlider({
+		Title = "Background Dimming",
+		Min = 0,
+		Max = 1,
+		Default = 0.6,
+		Decimals = 2,
+		Flag = "UI_BackgroundDarkening",
+		Callback = function(darkening)
+			self:SetBackgroundImage(self.BackgroundImageLabel.Image, darkening)
+		end,
+	})
+
 	return cfgTab
 end
 
 --============================================================================--
--- DEEPSEEK / EXTERNAL SCRIPT INTEGRATION SHOWCASE
--- Set `_G.AetherLibraryOnly = true` BEFORE loading if importing purely as a module.
+-- [Requirement 6] DEMO UI DISABLED BY DEFAULT
+-- Uncomment the block below only if you want to test standalone inside Studio.
 --============================================================================--
-if not _G.AetherLibraryOnly then
-	local Win = AetherUI:CreateWindow({
-		Title = "AetherUI",
-		Subtitle = "Modular Overlay & Debug Suite",
-		Icon = "rbxassetid://10723407389",
-		ToggleKey = Enum.KeyCode.RightShift,
-	})
-
-	local Tab = Win:CreateTab({
-		Title = "Visuals",
-		Icon = "rbxassetid://10723346959",
-		IconPosition = "Left",
-	})
-
-	-- Example: How DeepSeek or external backend scripts hook directly into this UI
-	local MyToggle = Tab:AddToggle("Visuals", false)
-	local MySlider = Tab:AddSlider("FOV", 50, 800, 200)
-
-	local MyColor = Tab:AddColorPicker({
-		Title = "Overlay Accent Color",
-		Default = Color3.fromRGB(0, 229, 255),
-		Tooltip = "Adjusts custom highlight / indicator color",
-	})
-
-	local TargetParts = Tab:AddDropdown({
-		Title = "Tracked Nodes",
-		Options = { "Head", "HumanoidRootPart", "UpperTorso", "LeftHand" },
-		Default = { "Head", "HumanoidRootPart" },
-		Multi = true,
-		Tooltip = "Searchable multi-select node filter",
-	})
-
-	local HoldKey = Tab:AddKeybind({
-		Title = "Activation Keybind",
-		Default = Enum.KeyCode.Q,
-		Tooltip = "Click to rebind shortcut key",
-	})
-
-	local AuthToken = Tab:AddTextbox({
-		Title = "Session Key (Obscured)",
-		Placeholder = "Paste token...",
-		Password = true,
-		Tooltip = "Demonstrates masked password input",
-	})
-
-	Tab:AddParagraph(
-		"<b>RichText Telemetry Status</b>",
-		"Press <font color='rgb(0,229,255)'>RightShift</font> (or tap the mobile pill) to toggle visibility. Drag the bottom-right corner to resize."
-	)
-
-	-- Event-Driven Hook (Fires whenever user clicks or ConfigManager loads)
-	MyToggle:OnChanged(function(state)
-		-- DeepSeek's external visual / debug logic goes here
-		print("Visuals State:", state, "| Active Key:", HoldKey:GetValue(), "| Token Len:", #AuthToken:GetValue())
-		Win:Notify({
-			Title = "Visuals Updated",
-			Content = "Overlay state set to " .. tostring(state),
-			Type = state and "Success" or "Info",
-			Duration = 2.5,
-		})
-	end)
-
-	-- Polling Hook inside RenderStepped loop (DeepSeek style)
-	local renderConn
-	renderConn = RunService.RenderStepped:Connect(function()
-		if not Win.ScreenGui or not Win.ScreenGui.Parent then
-			renderConn:Disconnect()
-			return
-		end
-		if MyToggle:GetValue() then
-			local fov = MySlider:GetValue()
-			local tint = MyColor:GetValue()
-			local nodes = TargetParts:GetValue()
-			-- Custom viewport overlay / debug circle rendering uses `fov`, `tint`, and `nodes` here
-			local _ = fov and tint and nodes
-		end
-	end)
-
-	-- Built-in Config Tab Demonstration (Save, Load, Delete)
-	Win:CreateConfigTab("Configs")
-end
+--[[
+local Win = AetherUI:CreateWindow({
+	Title = "AetherUI",
+	Subtitle = "v1.1.0 • Custom Edition",
+	ToggleKey = Enum.KeyCode.RightShift,
+})
+local Tab = Win:CreateTab("Visuals")
+local MyToggle = Tab:AddToggle("Visuals", false)
+local MySlider = Tab:AddSlider("FOV", 50, 800, 200)
+Win:CreateConfigTab("Configs")
+]]
 
 return AetherUI
