@@ -796,15 +796,18 @@ function SectionClass:AddDropdown(text, options, default, callback)
 		create("UIStroke", { Color = THEME.Border, Thickness = 1 }),
 	})
 
+	-- ✅ เพิ่ม ZIndex และ UIListLayout เพื่อไม่ให้ตัวเลือกทับกัน
 	local listFrame = create("Frame", {
 		Size = UDim2.new(1, -24, 0, #options * 26),
 		Position = UDim2.fromOffset(12, 40),
 		BackgroundColor3 = THEME.Bg,
 		BorderSizePixel = 0,
+		ZIndex = 5, -- ดันให้อยู่หน้าสุด
 		Parent = row,
 	}, {
 		create("UICorner", { CornerRadius = UDim.new(0, 6) }),
-		create("UIStroke", { Color = THEME.Border, Thickness = 1 }),
+		create("UIStroke", { Color = THEME.Border, Thickness = 1, ZIndex = 5 }),
+		create("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder }), -- 👈 จุดสำคัญที่ขาดไป!
 	})
 
 	local function selectOption(opt)
@@ -816,6 +819,40 @@ function SectionClass:AddDropdown(text, options, default, callback)
 			task.spawn(callback, selected)
 		end
 	end
+
+	for i, opt in ipairs(options) do
+		local optBtn = create("TextButton", {
+			Size = UDim2.new(1, 0, 0, 26),
+			BackgroundColor3 = THEME.Bg,
+			Text = tostring(opt),
+			TextColor3 = (opt == selected) and THEME.Accent or THEME.Text,
+			Font = Enum.Font.GothamMedium,
+			TextSize = 11,
+			LayoutOrder = i,
+			ZIndex = 6, -- ดันให้อยู่หน้าสุด
+			Parent = listFrame,
+		})
+		
+		optBtn.MouseEnter:Connect(function() optBtn.BackgroundColor3 = THEME.Card end)
+		optBtn.MouseLeave:Connect(function() optBtn.BackgroundColor3 = THEME.Bg end)
+
+		optBtn.MouseButton1Click:Connect(function()
+			selectOption(opt)
+		end)
+	end
+
+	dropBtn.MouseButton1Click:Connect(function()
+		isExpanded = not isExpanded
+		dropBtn.Text = tostring(selected) .. (isExpanded and "  ▲" or "  ▼")
+		local targetHeight = isExpanded and (40 + (#options * 26)) or 38
+		TweenService:Create(row, TWEEN_FAST, { Size = UDim2.new(1, 0, 0, targetHeight) }):Play()
+	end)
+
+	return setmetatable({
+		Set = function(_, opt) selectOption(opt) end,
+		Get = function() return selected end,
+	}, { __index = self })
+end
 
 	for i, opt in ipairs(options) do
 		local optBtn = create("TextButton", {
