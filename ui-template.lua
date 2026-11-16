@@ -805,7 +805,6 @@ function SectionClass:AddDropdown(text, options, default, callback)
 	}, {
 		create("UICorner", { CornerRadius = UDim.new(0, 6) }),
 		create("UIStroke", { Color = THEME.Border, Thickness = 1 }),
-		create("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder }),
 	})
 
 	local function selectOption(opt)
@@ -818,51 +817,35 @@ function SectionClass:AddDropdown(text, options, default, callback)
 		end
 	end
 
-	local function rebuildOptions(newOptions)
-		options = newOptions or {}
-		for _, child in ipairs(listFrame:GetChildren()) do
-			if child:IsA("TextButton") then
-				child:Destroy()
-			end
-		end
-		listFrame.Size = UDim2.new(1, -24, 0, #options * 26)
+	for i, opt in ipairs(options) do
+		local optBtn = create("TextButton", {
+			Size = UDim2.new(1, 0, 0, 26),
+			BackgroundColor3 = THEME.Bg,
+			Text = tostring(opt),
+			TextColor3 = (opt == selected) and THEME.Accent or THEME.Text,
+			Font = Enum.Font.GothamMedium,
+			TextSize = 11,
+			LayoutOrder = i,
+			Parent = listFrame,
+		})
+		
+		optBtn.MouseEnter:Connect(function() optBtn.BackgroundColor3 = THEME.Card end)
+		optBtn.MouseLeave:Connect(function() optBtn.BackgroundColor3 = THEME.Bg end)
 
-		for i, opt in ipairs(options) do
-			local optBtn = create("TextButton", {
-				Size = UDim2.new(1, 0, 0, 26),
-				BackgroundColor3 = THEME.Bg,
-				Text = tostring(opt),
-				TextColor3 = (opt == selected) and THEME.Accent or THEME.Text,
-				Font = Enum.Font.GothamMedium,
-				TextSize = 11,
-				LayoutOrder = i,
-				Parent = listFrame,
-			})
-
-			optBtn.MouseButton1Click:Connect(function()
-				for _, sibling in ipairs(listFrame:GetChildren()) do
-					if sibling:IsA("TextButton") then
-						sibling.TextColor3 = THEME.Text
-					end
-				end
-				optBtn.TextColor3 = THEME.Accent
-				selectOption(opt)
-			end)
-		end
+		optBtn.MouseButton1Click:Connect(function()
+			selectOption(opt)
+		end)
 	end
-
-	rebuildOptions(options)
 
 	dropBtn.MouseButton1Click:Connect(function()
 		isExpanded = not isExpanded
 		dropBtn.Text = tostring(selected) .. (isExpanded and "  ▲" or "  ▼")
-		local targetHeight = isExpanded and (46 + (#options * 26)) or 38
+		local targetHeight = isExpanded and (40 + (#options * 26)) or 38
 		TweenService:Create(row, TWEEN_FAST, { Size = UDim2.new(1, 0, 0, targetHeight) }):Play()
 	end)
 
 	return setmetatable({
-		Set = function(_, val) selectOption(val) end,
-		Refresh = function(_, list) rebuildOptions(list) end,
+		Set = function(_, opt) selectOption(opt) end,
 		Get = function() return selected end,
 	}, { __index = self })
 end
@@ -871,20 +854,18 @@ function SectionClass:AddColorBox(text, defaultColor, callback)
 	local presets = {
 		defaultColor or THEME.Accent,
 		Color3.fromRGB(0, 230, 90),
-		Color3.fromRGB(255, 60, 90),
+		Color3.fromRGB(255, 55, 95),
 		Color3.fromRGB(0, 195, 255),
 		Color3.fromRGB(255, 200, 0),
 		Color3.fromRGB(185, 80, 255),
-		Color3.fromRGB(255, 125, 40),
 		Color3.fromRGB(255, 255, 255),
 	}
+	local index = 1
 	local currentColor = presets[1]
-	local isOpenPicker = false
-
 	local row = self:_newRow(36)
 
 	create("TextLabel", {
-		Size = UDim2.new(1, -60, 0, 36),
+		Size = UDim2.new(1, -60, 1, 0),
 		Position = UDim2.fromOffset(12, 0),
 		BackgroundTransparency = 1,
 		Text = text or "Color",
@@ -895,9 +876,9 @@ function SectionClass:AddColorBox(text, defaultColor, callback)
 		Parent = row,
 	})
 
-	local swatchBtn = create("TextButton", {
-		Size = UDim2.fromOffset(28, 18),
-		Position = UDim2.new(1, -40, 0, 9),
+	local swatch = create("TextButton", {
+		Size = UDim2.fromOffset(28, 20),
+		Position = UDim2.new(1, -40, 0.5, -10),
 		BackgroundColor3 = currentColor,
 		Text = "",
 		AutoButtonColor = false,
@@ -907,57 +888,21 @@ function SectionClass:AddColorBox(text, defaultColor, callback)
 		create("UIStroke", { Color = THEME.Border, Thickness = 1.5 }),
 	})
 
-	local paletteRow = create("Frame", {
-		Size = UDim2.new(1, -24, 0, 26),
-		Position = UDim2.fromOffset(12, 38),
-		BackgroundColor3 = THEME.Bg,
-		BorderSizePixel = 0,
-		Parent = row,
-	}, {
-		create("UICorner", { CornerRadius = UDim.new(0, 6) }),
-		create("UIStroke", { Color = THEME.Border, Thickness = 1 }),
-		create("UIListLayout", {
-			FillDirection = Enum.FillDirection.Horizontal,
-			HorizontalAlignment = Enum.HorizontalAlignment.Center,
-			VerticalAlignment = Enum.VerticalAlignment.Center,
-			Padding = UDim.new(0, 8),
-		}),
-	})
-
-	local function applyColor(col)
-		currentColor = col
-		TweenService:Create(swatchBtn, TWEEN_FAST, { BackgroundColor3 = col }):Play()
+	swatch.MouseButton1Click:Connect(function()
+		index = (index % #presets) + 1
+		currentColor = presets[index]
+		TweenService:Create(swatch, TWEEN_FAST, { BackgroundColor3 = currentColor }):Play()
 		if callback then
-			task.spawn(callback, col)
+			task.spawn(callback, currentColor)
 		end
-	end
-
-	for _, col in ipairs(presets) do
-		local item = create("TextButton", {
-			Size = UDim2.fromOffset(18, 18),
-			BackgroundColor3 = col,
-			Text = "",
-			AutoButtonColor = false,
-			Parent = paletteRow,
-		}, {
-			create("UICorner", { CornerRadius = UDim.new(1, 0) }),
-		})
-		item.MouseButton1Click:Connect(function()
-			applyColor(col)
-			isOpenPicker = false
-			TweenService:Create(row, TWEEN_FAST, { Size = UDim2.new(1, 0, 0, 36) }):Play()
-		end)
-	end
-
-	swatchBtn.MouseButton1Click:Connect(function()
-		isOpenPicker = not isOpenPicker
-		TweenService:Create(row, TWEEN_FAST, {
-			Size = UDim2.new(1, 0, 0, isOpenPicker and 70 or 36),
-		}):Play()
 	end)
 
 	return setmetatable({
-		Set = function(_, col) applyColor(col) end,
+		Set = function(_, col)
+			currentColor = col
+			swatch.BackgroundColor3 = col
+			if callback then task.spawn(callback, col) end
+		end,
 		Get = function() return currentColor end,
 	}, { __index = self })
 end
